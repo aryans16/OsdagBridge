@@ -142,10 +142,11 @@ from osdagbridge.core.utils.common import (
 )
 
 from osdagbridge.core.reports.report_utils import _tex, _render_value, get_girder_entries
+from osdagbridge.core.reports.styles import build_longtable_header, TABLE_STYLE
 
 if TYPE_CHECKING:
     pass
-def ch5_design_checks(checks_data, bridge) -> str:
+def ch5_design_checks(checks_data, bridge, fig_paths=None) -> str:
     """Chapter 5 — Design Checks.
 
     Parameters
@@ -154,7 +155,10 @@ def ch5_design_checks(checks_data, bridge) -> str:
         Raw checks payload (currently unused; data is sourced from bridge).
     bridge : ReportDataBridge
         Provides input_dict, output_dict, and helper methods.
+    fig_paths : dict, optional
+        Paths to generated figures (including ur_summary chart).
     """
+    fig_paths = fig_paths or {}
     girder_entries = get_girder_entries(bridge.input_dict)
     if not girder_entries:
         n = int(bridge.input_dict.get(KEY_TS_NO_OF_GIRDERS, 1))
@@ -168,9 +172,10 @@ def ch5_design_checks(checks_data, bridge) -> str:
 
     # Generate Table 5.1 rows (per-girder section properties)
     t51_rows = []
-    for lbl, _ in girder_entries:
+    for i, (lbl, _) in enumerate(girder_entries):
+        break_cmd = r"\pagebreak " if i > 0 and i % 2 == 0 else ""
         t51_rows.append(
-            r"\multirow{13}{*}{\makecell{" + lbl + r"""}} & \textnormal{Depth, D (mm)} & """ + _render_value(bridge.output_dict, KEY_SD_TOTAL_DEPTH) + r""" \\[6pt]
+            break_cmd + r"\multirow{13}{*}{\makecell{" + lbl + r"""}} & \textnormal{Depth, D (mm)} & """ + _render_value(bridge.output_dict, KEY_SD_TOTAL_DEPTH) + r""" \\[6pt]
 \cline{2-3}
  & \textnormal{Top Flange Width, $b_f$ (mm)} & """ + _render_value(bridge.output_dict, KEY_SD_TOP_FLANGE_WIDTH) + r""" \\[6pt]
 \cline{2-3}
@@ -1065,6 +1070,111 @@ Fatigue Shear Resistance, $Q_r$ & IRC 22 Table 8 ($\phi d$, $N_{sc}$) & """
     ]
     t522_content = "\n".join(_t522)
 
+    ur_chart_tex = ""
+    if fig_paths and fig_paths.get("ur_summary"):
+        p_ur = fig_paths["ur_summary"].replace("\\", "/")
+        ur_chart_tex = (
+            r"""\begin{figure}[H]
+\centering
+\includegraphics[width=0.96\textwidth]{""" + p_ur + r"""}
+\caption{\textbf{Overall Design Check Summary --- Utilization Ratio (Demand / Capacity)}}
+\label{fig:ch5-ur-summary}
+\end{figure}
+\vspace{0.5em}
+"""
+        )
+
+    t51_header = build_longtable_header(
+        col_spec="|C{2.5cm}|L{8.0cm}|>{\\centering\\arraybackslash}p{5.0cm}|",
+        caption="Girder Section Properties (Final Optimized / User-selected)",
+        headers=["Girder", "Property", "Value"],
+        label="tab:ch5-girder-props"
+    )
+
+    t52_header = build_longtable_header(
+        col_spec="|C{2.5cm}|L{3cm}|C{3.5cm}|C{2.5cm}|>{\\centering\\arraybackslash}p{4.0cm}|",
+        caption="Girder Section Classification",
+        headers=["Girder", "Element", "Slenderness Ratio", "Class Limit", "Classification"],
+        label="tab:ch5-classification"
+    )
+
+    t53_header = build_longtable_header(
+        col_spec="|C{2.5cm}|C{3.5cm}|C{3.5cm}|>{\\centering\\arraybackslash}p{4.2cm}|C{1.8cm}|",
+        caption="Moment Capacity Check",
+        headers=["Girder", "Parameter", "Formula", "Value", "Status"],
+        label="tab:ch5-moment"
+    )
+
+    t54_header = build_longtable_header(
+        col_spec="|C{2.5cm}|C{3.5cm}|C{3.5cm}|>{\\centering\\arraybackslash}p{4.2cm}|C{1.8cm}|",
+        caption="Shear Capacity Check",
+        headers=["Girder", "Parameter", "Formula", "Value", "Status"],
+        label="tab:ch5-shear"
+    )
+
+    t55_header = build_longtable_header(
+        col_spec="|C{2.5cm}|C{3.5cm}|C{3.5cm}|>{\\centering\\arraybackslash}p{4.2cm}|C{1.8cm}|",
+        caption="Interaction Checks (M-V and M-N)",
+        headers=["Girder", "Check", "Condition", "Value", "Status"],
+        label="tab:ch5-interaction"
+    )
+
+    t56_header = build_longtable_header(
+        col_spec="|C{2.5cm}|C{3.5cm}|C{3.5cm}|>{\\centering\\arraybackslash}p{4.2cm}|C{1.8cm}|",
+        caption="Lateral Torsional Buckling Check -- Construction Stage",
+        headers=["Girder", "Parameter", "Formula", "Value", "Status"],
+        label="tab:ch5-ltb"
+    )
+
+    t57_header = build_longtable_header(
+        col_spec="|C{2.5cm}|L{6.5cm}|>{\\arraybackslash}p{6.5cm}|",
+        caption="Stiffener Design Summary",
+        headers=["Girder", "Parameter", "Design Value"],
+        label="tab:ch5-stiffener"
+    )
+
+    t59_header = build_longtable_header(
+        col_spec="|C{2.5cm}|L{3.5cm}|C{3.5cm}|>{\\centering\\arraybackslash}p{4.2cm}|C{1.8cm}|",
+        caption="End Panel Stiffener Checks",
+        headers=["Girder", "Check", "Required", "Provided", "Status"],
+        label="tab:ch5-end-panel"
+    )
+
+    t510_header = build_longtable_header(
+        col_spec="|C{2.5cm}|L{3.5cm}|C{3.5cm}|>{\\centering\\arraybackslash}p{3.5cm}|C{2.5cm}|",
+        caption="Serviceability -- Deflection Checks",
+        headers=["Girder", "Check", "Allowable", "Actual", "Status"],
+        label="tab:ch5-deflection"
+    )
+
+    t511_header = build_longtable_header(
+        col_spec="|C{2.5cm}|L{3.5cm}|C{3.5cm}|>{\\centering\\arraybackslash}p{3.5cm}|C{2.5cm}|",
+        caption="Serviceability -- Maximum Stress Limitation",
+        headers=["Girder", "Element", "Allowable Stress", "Actual Stress", "Status"],
+        label="tab:ch5-stress"
+    )
+
+    t512_header = build_longtable_header(
+        col_spec="|C{2.5cm}|C{3.5cm}|C{3.5cm}|>{\\centering\\arraybackslash}p{3.5cm}|C{2.5cm}|",
+        caption="Serviceability -- Fatigue Assessment",
+        headers=["Girder", "Stress Range, $\\Delta\\sigma$ (MPa)", "Fatigue Limit, $f_{fd}$ (MPa)", "Utilization Ratio", "Status"],
+        label="tab:ch5-fatigue"
+    )
+
+    g_summary_header = build_longtable_header(
+        col_spec="|C{1.6cm}|>{\\centering\\arraybackslash}p{3.6cm}|C{2.4cm}|C{2.0cm}|C{2.1cm}|C{1.7cm}|C{1.5cm}|",
+        caption="Girder Design Summary (DCR / Utilization Ratio)",
+        headers=["Girder", "Controlling LC", "Controlling Check", "Demand", "Capacity", "UR", "Status"],
+        label="tab:ch5-girder-summary"
+    )
+
+    t522_header = build_longtable_header(
+        col_spec="|C{3.4cm}|L{4.5cm}|C{2.3cm}|C{2.3cm}|>{\\centering\\arraybackslash}p{1.6cm}|",
+        caption="Overall Design Check Summary --- All Members",
+        headers=["Member / Check", "Governing Load Combo", "Demand", "Capacity", "UR"],
+        label="tab:ch5-overall-summary"
+    )
+
     return r"""
 \chapter{Design Checks}
 
@@ -1073,120 +1183,61 @@ This section presents all structural design checks performed by OsdagBridge. For
 \section{Plate Girder Design}
 \label{sec:plate-girder}
 
-\vspace{1em}
-\begin{longtable}{|C{2.5cm}|L{8.0cm}|>{\centering\arraybackslash}p{5.0cm}|}
-\caption{\textbf{Girder Section Properties (Final Optimized / User-selected)}}
-\hline
-\textbf{Girder} & \textbf{Property} & \textbf{Value} \\[6pt]
-\hline
-""" + t51_content + r"""
+\vspace{0.8em}
+""" + t51_header + t51_content + r"""
 \end{longtable}
 
-\vspace{1em}
-\begin{longtable}{|C{2.5cm}|L{3cm}|C{3.5cm}|C{2.5cm}|>{\centering\arraybackslash}p{4.0cm}|}
-\caption{\textbf{Girder Section Classification}}
-\hline
-\textbf{} & \textbf{Element} & \textbf{Slenderness Ratio} & \textbf{Class Limit} & \textbf{Classification} \\[6pt]
-\hline
-""" + t52_content + r"""
+\vspace{0.8em}
+""" + t52_header + t52_content + r"""
 \end{longtable}
 \noindent\textit{Note: IS 800:2007 Table 2}
 
-\vspace{1em}
-\begin{longtable}{|C{2.5cm}|C{3.5cm}|C{3.5cm}|>{\centering\arraybackslash}p{4.2cm}|C{1.8cm}|}
-\caption{\textbf{Moment Capacity Check}}
-\hline
-\textbf{} & \textbf{Parameter} & \textbf{Formula} & \textbf{Value} & \textbf{Status} \\[6pt]
-\hline
-""" + t53_content + r"""
+\vspace{0.8em}
+""" + t53_header + t53_content + r"""
 \end{longtable}
 \noindent\textit{Note: IRC 22 Cl. 603.3.1, IS 800 Cl. 8.2.1}
 
-\vspace{1em}
-\begin{longtable}{|C{2.5cm}|C{3.5cm}|C{3.5cm}|>{\centering\arraybackslash}p{4.2cm}|C{1.8cm}|}
-\caption{\textbf{Shear Capacity Check}}
-\hline
-\textbf{} & \textbf{Parameter} & \textbf{Formula} & \textbf{Value} & \textbf{Status} \\[6pt]
-\hline
-""" + t54_content + r"""
+\vspace{0.8em}
+""" + t54_header + t54_content + r"""
 \end{longtable}
 \noindent\textit{Note: IS 800 Cl. 8.4, IRC 22 Cl. 603.3.3.2}
 
-\vspace{1em}
-\begin{longtable}{|C{2.5cm}|C{3.5cm}|C{3.5cm}|>{\centering\arraybackslash}p{4.2cm}|C{1.8cm}|}
-\caption{\textbf{Interaction Checks (M-V and M-N)}}
-\hline
-\textbf{} & \textbf{Check} & \textbf{Condition} & \textbf{Value} & \textbf{Status} \\[6pt]
-\hline
-""" + t55_content + r"""
+\vspace{0.8em}
+""" + t55_header + t55_content + r"""
 \end{longtable}
 \noindent\textit{Note: IRC 22 Cl. 603.3.3.3}
 
-\vspace{1em}
-\begin{longtable}{|C{2.5cm}|C{3.5cm}|C{3.5cm}|>{\centering\arraybackslash}p{4.2cm}|C{1.8cm}|}
-\caption{\textbf{Lateral Torsional Buckling Check -- Construction Stage}}
-\hline
-\textbf{} & \textbf{Parameter} & \textbf{Formula} & \textbf{Value} & \textbf{Status} \\[6pt]
-\hline
-""" + t56_content + r"""
+\vspace{0.8em}
+""" + t56_header + t56_content + r"""
 \end{longtable}
 \noindent\textit{Note: IRC 22 Cl. 603.3.3.1, IS 800 Cl. 8.2.2}
 
-\vspace{1em}
-\begin{longtable}{|C{2.5cm}|L{6.5cm}|>{\arraybackslash}p{6.5cm}|}
-\caption{\textbf{Stiffener Design Summary}}
-\hline
-""" + t57_content + r"""
+\vspace{0.8em}
+""" + t57_header + t57_content + r"""
 \end{longtable}
 """ + t58_block + r"""
-\vspace{1em}
+\vspace{0.8em}
 
-\begin{longtable}{|C{2.5cm}|L{3.5cm}|C{3.5cm}|>{\centering\arraybackslash}p{4.2cm}|C{1.8cm}|}
-\caption{\textbf{End Panel Stiffener Checks}}
-\hline
-\textbf{} & \textbf{Check} & \textbf{Required} & \textbf{Provided} & \textbf{Status} \\[6pt]
-\hline
-""" + t59_content + r"""
+""" + t59_header + t59_content + r"""
 \end{longtable}
 \noindent\textit{Note: IS 800 Cl. 8.4.2.2}
 
-\vspace{1em}
-\begin{longtable}{|C{2.5cm}|L{3.5cm}|C{3.5cm}|>{\centering\arraybackslash}p{3.5cm}|C{2.5cm}|}
-\caption{\textbf{Serviceability -- Deflection Checks}}
-\hline
-\textbf{} & \textbf{Check} & \textbf{Allowable} & \textbf{Actual} & \textbf{Status} \\[6pt]
-\hline
-""" + t510_content + r"""
+\vspace{0.8em}
+""" + t510_header + t510_content + r"""
 \end{longtable}
 \noindent\textit{Note: IRC 22 Cl. 604.3.2}
 
-\vspace{1em}
-\begin{longtable}{|C{2.5cm}|L{3.5cm}|C{3.5cm}|>{\centering\arraybackslash}p{3.5cm}|C{2.5cm}|}
-\caption{\textbf{Serviceability -- Maximum Stress Limitation}}
-\hline
-\textbf{} & \textbf{Element} & \textbf{Allowable Stress} & \textbf{Actual Stress} & \textbf{Status} \\[6pt]
-\hline
-""" + t511_content + r"""
+\vspace{0.8em}
+""" + t511_header + t511_content + r"""
 \end{longtable}
 
-\vspace{1em}
-\begin{longtable}{|C{2.5cm}|C{3.5cm}|C{3.5cm}|>{\centering\arraybackslash}p{3.5cm}|C{2.5cm}|}
-\caption{\textbf{Serviceability -- Fatigue Assessment}}
-\hline
-\textbf{} & \textbf{Stress Range, $\Delta\sigma$ (MPa)} & \textbf{Fatigue Limit, $f_{fd}$ (MPa)} & \textbf{Utilization Ratio} & \textbf{Status} \\[6pt]
-\hline
-""" + t512_content + r"""
+\vspace{0.8em}
+""" + t512_header + t512_content + r"""
 \end{longtable}
 \noindent\textit{Note: IRC 22 Cl. 605 --- governing of normal and shear fatigue (worst by DCR). Capacity reduction factor $\mu_r$ applied where plate thickness > 25 mm.}
 
-\vspace{1em}
-\vspace{0.4em}
-\begin{longtable}{|C{1.6cm}|>{\centering\arraybackslash}p{3.6cm}|C{2.4cm}|C{2.0cm}|C{2.1cm}|C{1.7cm}|C{1.5cm}|}
-\caption{\textbf{Girder Design Summary (DCR / Utilization Ratio)}}
-\hline
-\textbf{Girder} & \textbf{Controlling LC / Combination} & \textbf{Controlling Check} & \textbf{Demand} & \textbf{Capacity} & \textbf{UR} & \textbf{Status} \\[6pt]
-\hline
-""" + g_summary_table_content + r"""
+\vspace{0.8em}
+""" + g_summary_header + g_summary_table_content + r"""
 \end{longtable}
 \noindent\textit{Note: UR = Demand / Capacity. A value $\leq 1.0$ indicates a passing check. The controlling check is the criterion with the highest UR for each girder, with the real load case/combination that drives it.}
 
@@ -1491,13 +1542,11 @@ End diaphragms at the supports transfer transverse loads to the bearings, restra
 \label{sec:overall-summary}
 % ===========================
 
-\vspace{1em}
-\begin{longtable}{|C{3.4cm}|L{4.5cm}|C{2.3cm}|C{2.3cm}|>{\centering\arraybackslash}p{1.6cm}|}
-\caption{\textbf{Overall Design Check Summary --- All Members}}
-\hline
-\textbf{Member / Check} & \textbf{Governing Load Combo} & \textbf{Demand} & \textbf{Capacity} & \textbf{UR} \\[6pt]
-\hline
-""" + t522_content + r"""
+The governing design check summary across all bridge components is presented below. A demand-to-capacity Utilization Ratio ($UR \leq 1.0$) confirms structural compliance with IRC 22, IRC 24, IRC 112, and IS 800.
+
+""" + ur_chart_tex + r"""
+\vspace{0.6em}
+""" + t522_header + t522_content + r"""
 \end{longtable}
 \noindent\textit{Note: UR = Demand / Capacity. All values $\leq 1.0$ indicate passing checks. The governing check for each component is highlighted in the individual design check sections above.}
 

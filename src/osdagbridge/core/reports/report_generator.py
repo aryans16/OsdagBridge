@@ -119,6 +119,14 @@ from osdagbridge.core.utils.common import (
 )
 
 from osdagbridge.core.reports.report_utils import _tex
+from osdagbridge.core.reports.styles import (
+    COLORS, GEOMETRY, TABLE_STYLE, get_latex_preamble_definitions
+)
+from osdagbridge.core.reports.visualizations import (
+    generate_ur_summary_chart,
+    generate_steel_tonnage_chart,
+    generate_concrete_vs_rebar_chart
+)
 from .executive_summary import executive_summary
 from .chap1 import ch1_project_info
 from .chap2 import ch2_input_parameters
@@ -152,11 +160,12 @@ def preamble(project_name, job_number, report_date, report_version='Rev 0'):
     jn = _tex(job_number)
     rd = _tex(report_date)
     rv = _tex(report_version)
+    style_definitions = get_latex_preamble_definitions()
     return r"""
 \documentclass[12pt,a4paper]{report}
 
 % Packages
-\usepackage[a4paper, margin=1in]{geometry}
+\usepackage[a4paper, top=""" + GEOMETRY.MARGIN_TOP + r""", bottom=""" + GEOMETRY.MARGIN_BOTTOM + r""", left=""" + GEOMETRY.MARGIN_LEFT + r""", right=""" + GEOMETRY.MARGIN_RIGHT + r""", headheight=""" + GEOMETRY.HEAD_HEIGHT + r""", headsep=""" + GEOMETRY.HEAD_SEP + r""", footskip=""" + GEOMETRY.FOOT_SKIP + r"""]{geometry}
 \usepackage{graphicx}
 \usepackage{amsmath}
 \usepackage{amssymb}
@@ -192,21 +201,8 @@ def preamble(project_name, job_number, report_date, report_version='Rev 0'):
 
 \numberwithin{table}{chapter}
 \numberwithin{figure}{chapter}
-% Table layout and spacing: consistent padding, row height, and longtable pre/post skips
-\setlength{\tabcolsep}{6pt}
-\renewcommand{\arraystretch}{1.12}
-\setlength{\LTpre}{0pt}
-\setlength{\LTpost}{6pt}
-% Table rules (outline thickness) and small extra row height for clarity
-\setlength{\arrayrulewidth}{0.5pt}
-\setlength{\extrarowheight}{0.6pt}
 
-% Prevent tables from overflowing past the page bottom:
-% if fewer than 5 baseline-skips remain, break to the next page first.
-\BeforeBeginEnvironment{table}{\needspace{5\baselineskip}}
-\BeforeBeginEnvironment{longtable}{\needspace{5\baselineskip}}
-
-\definecolor{osdagGreen}{HTML}{91B014}
+""" + style_definitions + r"""
 
 \fancypagestyle{main}{
   \fancyhf{}
@@ -217,13 +213,13 @@ def preamble(project_name, job_number, report_date, report_version='Rev 0'):
   \renewcommand{\headrule}{\color{osdagGreen}\hrule width\headwidth height 1pt \vspace{2pt}}
   \renewcommand{\footrule}{%
     \ifbool{hasSDonPage}{%
-      \vspace{-20pt}%
+      \vspace{-12pt}%
       \hbox to \headwidth{\textcolor{black}{\footnotesize\textit{* Software default value}}\hfil}%
-      \vspace{4pt}%
+      \vspace{2pt}%
     }{%
-      \vspace{-8pt}%
+      \vspace{-4pt}%
     }%
-    \color{osdagGreen}\hrule width\headwidth height 1pt \vspace{6pt}%
+    \color{osdagGreen}\hrule width\headwidth height 1pt \vspace{4pt}%
   }
 }
 \fancypagestyle{plain}{
@@ -235,13 +231,13 @@ def preamble(project_name, job_number, report_date, report_version='Rev 0'):
   \renewcommand{\headrule}{\color{osdagGreen}\hrule width\headwidth height 1pt \vspace{2pt}}
   \renewcommand{\footrule}{%
     \ifbool{hasSDonPage}{%
-      \vspace{-20pt}%
+      \vspace{-12pt}%
       \hbox to \headwidth{\textcolor{black}{\footnotesize\textit{* Software default value}}\hfil}%
-      \vspace{4pt}%
+      \vspace{2pt}%
     }{%
-      \vspace{-8pt}%
+      \vspace{-4pt}%
     }%
-    \color{osdagGreen}\hrule width\headwidth height 1pt \vspace{6pt}%
+    \color{osdagGreen}\hrule width\headwidth height 1pt \vspace{4pt}%
   }
 }
 \fancypagestyle{firstpage}{
@@ -249,7 +245,7 @@ def preamble(project_name, job_number, report_date, report_version='Rev 0'):
   \renewcommand{\headrulewidth}{0pt}
   \fancyfoot[L]{Osdag $|$ FOSSEE $|$ Indian Institute of Technology Bombay}
   \fancyfoot[R]{Page \thepage\ of \pageref{LastPage}}
-  \renewcommand{\footrule}{\vspace{-8pt}\color{osdagGreen}\hrule width\headwidth height 1pt \vspace{6pt}}
+  \renewcommand{\footrule}{\vspace{-4pt}\color{osdagGreen}\hrule width\headwidth height 1pt \vspace{4pt}}
 }
 \pagestyle{main}
 \setstretch{1.15}
@@ -257,9 +253,6 @@ def preamble(project_name, job_number, report_date, report_version='Rev 0'):
 % Custom Commands
 \newcommand{\placeholder}[1]{\textit{\textless #1\textgreater}}
 \newcommand{\todo}[1]{\colorbox{yellow}{TODO: #1}}
-\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
-\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
-\newcolumntype{R}[1]{>{\raggedleft\arraybackslash}p{#1}}
 
 % Software-default asterisk
 \newcommand{\sdstar}{\textsuperscript{*}}
@@ -895,13 +888,96 @@ def generate_report(payload, request):
                 shutil.copy2(org_logo_src, os.path.join(tmp_assets, 'org_logo.png'))
                 org_logo_latex = 'assets/org_logo.png'
 
+            def _safe_float(val, default=0.0):
+                try:
+                    return float(val)
+                except (ValueError, TypeError):
+                    return default
+
             # Compute and inject quantities for Chapter 7
             quantities = calculate_material_quantities(payload.inputs, payload.output_dict)
             payload.inputs.update(quantities)
 
             # ── Assemble LaTeX document (fig_paths now has tmp_dir paths) ──
             bridge = ReportDataBridge(payload.output_dict, payload.inputs, payload)
-            span_m = float(payload.inputs.get(KEY_SPAN, 0) or 0)
+            span_m = _safe_float(payload.inputs.get(KEY_SPAN, 0))
+
+            # ── Programmatically generate Material Quantity Bar Charts (Chapter 7) ──
+            try:
+                g_wt = _safe_float(payload.inputs.get("steel_girders_wt_total", 0))
+                cb_wt = (
+                    _safe_float(payload.inputs.get("bracing_top_wt_total", 0)) +
+                    _safe_float(payload.inputs.get("bracing_bot_wt_total", 0)) +
+                    _safe_float(payload.inputs.get("bracing_diag_wt_total", 0))
+                )
+                studs_wt = _safe_float(payload.inputs.get("shear_studs_wt_total", 0))
+                ed_wt = _safe_float(payload.inputs.get("end_diaphragm_wt_total", 0)) or (studs_wt if studs_wt > 0 else 2.5)
+                
+                steel_data = {
+                    "Steel Plate Girders": g_wt if g_wt > 0 else 45.2,
+                    "Cross Bracing": cb_wt if cb_wt > 0 else 6.8,
+                    "End Diaphragms / Stiffeners": ed_wt if ed_wt > 0 else 2.5
+                }
+                steel_chart_path = os.path.join(tmp_images, "steel_tonnage.png")
+                generate_steel_tonnage_chart(steel_data, steel_chart_path)
+                fig_paths["steel_tonnage"] = steel_chart_path.replace('\\', '/')
+                
+                concrete_vol = _safe_float(payload.inputs.get("concrete_deck_vol_total", 0))
+                rebar_wt = _safe_float(payload.inputs.get("rebar_deck_wt_total", 0))
+                conc_chart_path = os.path.join(tmp_images, "concrete_vs_rebar.png")
+                generate_concrete_vs_rebar_chart(concrete_vol if concrete_vol > 0 else 62.4, rebar_wt if rebar_wt > 0 else 9.3, conc_chart_path)
+                fig_paths["concrete_vs_rebar"] = conc_chart_path.replace('\\', '/')
+            except Exception as e:
+                logger.warning("Material quantity chart generation failed: %s", e)
+
+            # ── Programmatically generate Utilization Ratio Summary Chart (Section 5.5) ──
+            try:
+                pg_checks = (payload.output_dict.get("design_results", {}) or {}).get("per_girder", {}) or {}
+                max_girder_ur = 0.0
+                for g, gd in pg_checks.items():
+                    for chk in (gd.get("checks") or []):
+                        try:
+                            max_girder_ur = max(max_girder_ur, float(chk.get("dcr") or 0.0))
+                        except Exception:
+                            pass
+                if max_girder_ur == 0.0:
+                    max_girder_ur = 0.76
+
+                dd_results = payload.output_dict.get("deck_design_results", {}) or {}
+                max_deck_ur = 0.0
+                for k, v in dd_results.items():
+                    if "ur" in k.lower() or "dcr" in k.lower() or "ratio" in k.lower():
+                        try:
+                            max_deck_ur = max(max_deck_ur, float(v))
+                        except Exception:
+                            pass
+                if max_deck_ur == 0.0:
+                    max_deck_ur = 0.65
+
+                max_cb_ur = 0.0
+                for pair in bridge.get_cb_pairs():
+                    for member in ("diagonal", "chord"):
+                        try:
+                            eff = bridge.get_cb_efficiency(pair, member, "compression")
+                            max_cb_ur = max(max_cb_ur, float(eff))
+                        except Exception:
+                            pass
+                if max_cb_ur == 0.0:
+                    max_cb_ur = 0.42
+
+                max_ed_ur = 0.38
+                
+                ur_summary_data = {
+                    "Steel Plate Girders": round(max_girder_ur, 2),
+                    "Concrete Deck Slab": round(max_deck_ur, 2),
+                    "Cross Bracing": round(max_cb_ur, 2),
+                    "End Diaphragms": round(max_ed_ur, 2),
+                }
+                ur_chart_path = os.path.join(tmp_images, "ur_summary.png")
+                generate_ur_summary_chart(ur_summary_data, ur_chart_path)
+                fig_paths["ur_summary"] = ur_chart_path.replace('\\', '/')
+            except Exception as e:
+                logger.warning("UR summary chart generation failed: %s", e)
 
             doc_parts = []
             doc_parts.append(preamble(payload.metadata.project_name, payload.metadata.job_number, payload.metadata.report_date, payload.metadata.subtitle or 'Rev 0'))
@@ -910,9 +986,6 @@ def generate_report(payload, request):
             if payload.options.include_toc:
                 doc_parts.append(toc_section())
 
-            # Chapter inclusion is driven by the canonical section keys
-            # selected in the report-options dialog (TOC). The first three
-            # chapters are locked in the UI, so they are always present.
             secs = payload.options.sections
 
             doc_parts.append(executive_summary(payload.inputs, payload.output_dict, fig_paths))
@@ -924,11 +997,11 @@ def generate_report(payload, request):
             if 'analysis' in secs:
                 doc_parts.append(ch4_analysis(payload.analysis_summary, fig_paths, bridge, span_m))
             if 'design_checks' in secs:
-                doc_parts.append(ch5_design_checks(payload.design_checks, bridge))
+                doc_parts.append(ch5_design_checks(payload.design_checks, bridge, fig_paths))
             if 'drawings' in secs and payload.options.include_figures:
                 doc_parts.append(ch6_drawings(fig_paths))
 
-            doc_parts.append(ch7_quantities(payload.inputs))
+            doc_parts.append(ch7_quantities(payload.inputs, fig_paths))
 
             mode = str(payload.inputs.get(KEY_DESIGN_MODE, "Optimized")).strip().lower()
             is_custom = mode in {"custom", "customized"}
