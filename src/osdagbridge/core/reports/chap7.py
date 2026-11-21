@@ -49,7 +49,7 @@ def ch7_quantities(input_dict, fig_paths=None):
             r"""
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.92\textwidth]{""" + p_steel + r"""}
+\includegraphics[width=\reportMaterialFigureWidth]{""" + p_steel + r"""}
 \caption{\textbf{Structural Steel Tonnage Breakdown}}
 \label{fig:ch7-steel-tonnage}
 \end{figure}
@@ -62,7 +62,7 @@ def ch7_quantities(input_dict, fig_paths=None):
             r"""
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.78\textwidth]{""" + p_conc + r"""}
+\includegraphics[width=\reportMaterialCompactFigureWidth]{""" + p_conc + r"""}
 \caption{\textbf{Concrete Volume ($m^3$) vs. Reinforcement Steel Weight (MT)}}
 \label{fig:ch7-concrete-rebar}
 \end{figure}
@@ -81,7 +81,7 @@ This chapter details the bill of quantities (BOQ) and provides graphical summari
 \label{sec:bom-table}
 
 \begingroup
-\setlength{\tabcolsep}{3.5pt}
+\setlength{\tabcolsep}{\reportTabColSepTight}
 """ + t71_header + t71_body + r"""
 \end{longtable}
 \endgroup

@@ -64,126 +64,86 @@ def ch3_loads(input_dict):
     from osdagbridge.core.utils.codes.irc6_2017 import IRC6_2017
 
     span = input_dict.get(KEY_SPAN)
-    span_m = 30.0
+    span_m = None
     if span not in (None, ""):
         try:
             span_m = float(span)
         except Exception:
-            span_m = 30.0
+            span_m = None
 
     # Calculate Impact Factors per IRC 6
     try:
-        im_a = IRC6_2017.cl_208_2_impact_factor(span_m)
-        im_a_str = f"{1.0 + im_a:.3f}"
+        im_a = IRC6_2017.cl_208_2_impact_factor(span_m) if span_m is not None else None
+        im_a_str = f"{1.0 + im_a:.3f}" if im_a is not None else "N/A"
     except Exception:
-        im_a_str = "1.188"
+        im_a_str = "N/A"
 
     try:
-        im_heavy = IRC6_2017.cl_208_3_impact_factor(span_m)
-        im_heavy_str = f"{1.0 + im_heavy:.3f}"
+        im_heavy = IRC6_2017.cl_208_3_impact_factor(span_m) if span_m is not None else None
+        im_heavy_str = f"{1.0 + im_heavy:.3f}" if im_heavy is not None else "N/A"
     except Exception:
-        im_heavy_str = "1.100"
+        im_heavy_str = "N/A"
 
     # Calculate Braking Force per IRC 6 Cl. 211
     lanes = input_dict.get(KEY_WC_LD_LANE_TABLE_COUNT)
-    lanes_int = 2
+    lanes_int = None
     if lanes not in (None, ""):
         try:
             lanes_int = max(1, int(lanes))
         except Exception:
-            lanes_int = 2
+            lanes_int = None
 
     try:
-        braking_force_t = IRC6_2017.cl_211_2_braking_force(lanes_int)
-        braking_force_kN = braking_force_t * 9.81
-        braking_force_val_str = f"{braking_force_kN:.2f} kN"
+        braking_force_t = IRC6_2017.cl_211_2_braking_force(lanes_int) if lanes_int is not None else None
+        braking_force_kN = braking_force_t * 9.81 if braking_force_t is not None else None
+        braking_force_val_str = f"{braking_force_kN:.2f}" if braking_force_kN is not None else "N/A"
     except Exception:
-        braking_force_val_str = "200.00 kN"
+        braking_force_val_str = "N/A"
 
     # ─────────────────────────────────────────────────────────────────────────
     # 1. Structure Vehicle Live Load Table (Requirement 3)
-    # Columns: Vehicle | Total Load (kN) | Impact Factor | Braking Considered? | Braking Value | Eccentricity
+    # Columns: vehicle class, selected-load total, impact, braking, eccentricity,
+    # and centrifugal force. Centrifugal demand is N/A because curvature is not
+    # represented by the current bridge input model.
     # ─────────────────────────────────────────────────────────────────────────
     vehicle_rows = []
-    has_any_vehicle = False
 
-    # (a) Class A
-    if input_dict.get(KEY_LL_IRC_CLASS_A, True):
-        has_any_vehicle = True
+    def add_vehicle_row(name, total_load, impact, braking, eccentricity):
+        values = (name, total_load, impact, braking, eccentricity, "N/A")
         vehicle_rows.append(
-            f"Class A & 554 & {im_a_str} & Yes & {braking_force_val_str} & 1.2 m \\\\[{TABLE_STYLE.ROW_HEIGHT_PT}]\n\\hline"
+            " & ".join(_tex(str(value)) for value in values)
+            + f" \\\\[{TABLE_STYLE.ROW_HEIGHT_PT}]\n\\hline"
         )
 
-    # (b) Class 70R Wheeled
-    if input_dict.get(KEY_LL_IRC_70R_WHEELED):
-        has_any_vehicle = True
-        vehicle_rows.append(
-            f"Class 70R (Wheeled) & 1000 & {im_heavy_str} & Yes & {braking_force_val_str} & 1.2 m \\\\[{TABLE_STYLE.ROW_HEIGHT_PT}]\n\\hline"
-        )
+    standard_vehicles = (
+        (KEY_LL_IRC_CLASS_A, "Class A", "554", im_a_str, braking_force_val_str, "1.2"),
+        (KEY_LL_IRC_70R_WHEELED, "Class 70R (Wheeled)", "1000", im_heavy_str, braking_force_val_str, "1.2"),
+        (KEY_LL_IRC_70R_TRACKED, "Class 70R (Tracked)", "700", im_heavy_str, braking_force_val_str, "1.2"),
+        (KEY_LL_IRC_AA_WHEELED, "Class AA (Wheeled)", "400", im_heavy_str, braking_force_val_str, "1.2"),
+        (KEY_LL_IRC_AA_TRACKED, "Class AA (Tracked)", "700", im_heavy_str, braking_force_val_str, "1.2"),
+        (KEY_LL_IRC_70R_BOGIE, "Class 70R (Bogie)", "400", im_heavy_str, braking_force_val_str, "1.2"),
+        (KEY_LL_IRC_CLASS_SV, "Class SV", "3920", "N/A", "---", "---"),
+        (KEY_LL_IRC_CLASS_FATIGUE, "Class Fatigue", "400", "N/A", "---", "---"),
+    )
+    for key, name, total_load, impact, braking, eccentricity in standard_vehicles:
+        if input_dict.get(key, False):
+            add_vehicle_row(name, total_load, impact, braking, eccentricity)
 
-    # (c) Class 70R Tracked
-    if input_dict.get(KEY_LL_IRC_70R_TRACKED):
-        has_any_vehicle = True
-        vehicle_rows.append(
-            f"Class 70R (Tracked) & 700 & {im_heavy_str} & Yes & {braking_force_val_str} & 1.2 m \\\\[{TABLE_STYLE.ROW_HEIGHT_PT}]\n\\hline"
-        )
+    custom_vehicles = input_dict.get(KEY_LL_CUSTOM_VEHICLES) or []
+    if isinstance(custom_vehicles, list):
+        for vehicle in custom_vehicles:
+            if isinstance(vehicle, dict):
+                if not vehicle.get("included", True):
+                    continue
+                name = vehicle.get("name")
+            else:
+                name = str(vehicle)
+            if name:
+                add_vehicle_row(name, "As defined", "N/A", "N/A", "N/A")
 
-    # (d) Class AA Wheeled
-    if input_dict.get(KEY_LL_IRC_AA_WHEELED):
-        has_any_vehicle = True
+    if not vehicle_rows:
         vehicle_rows.append(
-            f"Class AA (Wheeled) & 400 & {im_heavy_str} & Yes & {braking_force_val_str} & 1.2 m \\\\[{TABLE_STYLE.ROW_HEIGHT_PT}]\n\\hline"
-        )
-
-    # (e) Class AA Tracked
-    if input_dict.get(KEY_LL_IRC_AA_TRACKED):
-        has_any_vehicle = True
-        vehicle_rows.append(
-            f"Class AA (Tracked) & 700 & {im_heavy_str} & Yes & {braking_force_val_str} & 1.2 m \\\\[{TABLE_STYLE.ROW_HEIGHT_PT}]\n\\hline"
-        )
-
-    # (f) Class SV (Special Vehicle)
-    if input_dict.get(KEY_LL_IRC_CLASS_SV):
-        has_any_vehicle = True
-        vehicle_rows.append(
-            f"Class SV & 3920 & 1.000 & No & --- & --- \\\\[{TABLE_STYLE.ROW_HEIGHT_PT}]\n\\hline"
-        )
-
-    # (g) Class 70R Bogie
-    if input_dict.get(KEY_LL_IRC_70R_BOGIE):
-        has_any_vehicle = True
-        vehicle_rows.append(
-            f"Class 70R (Bogie) & 400 & {im_heavy_str} & Yes & {braking_force_val_str} & 1.2 m \\\\[{TABLE_STYLE.ROW_HEIGHT_PT}]\n\\hline"
-        )
-
-    # (h) Class Fatigue
-    if input_dict.get(KEY_LL_IRC_CLASS_FATIGUE):
-        has_any_vehicle = True
-        vehicle_rows.append(
-            f"Class Fatigue & 400 & 1.000 & No & --- & --- \\\\[{TABLE_STYLE.ROW_HEIGHT_PT}]\n\\hline"
-        )
-
-    # Custom vehicles from UI
-    custom = input_dict.get(KEY_LL_CUSTOM_VEHICLES)
-    if custom and isinstance(custom, list):
-        for c in custom:
-            c_name = c.get('name') if isinstance(c, dict) else str(c)
-            if c_name:
-                has_any_vehicle = True
-                vehicle_rows.append(
-                    f"{_tex(c_name)} & As Defined & 1.000 & Optional & {braking_force_val_str} & 1.2 m \\\\[{TABLE_STYLE.ROW_HEIGHT_PT}]\n\\hline"
-                )
-
-    # Fallback if no vehicle was explicitly set
-    if not has_any_vehicle:
-        vehicle_rows.append(
-            f"Class A & 554 & {im_a_str} & Yes & {braking_force_val_str} & 1.2 m \\\\[{TABLE_STYLE.ROW_HEIGHT_PT}]\n\\hline"
-        )
-        vehicle_rows.append(
-            f"Class 70R (Wheeled) & 1000 & {im_heavy_str} & Yes & {braking_force_val_str} & 1.2 m \\\\[{TABLE_STYLE.ROW_HEIGHT_PT}]\n\\hline"
-        )
-        vehicle_rows.append(
-            f"Class SV & 3920 & 1.000 & No & --- & --- \\\\[{TABLE_STYLE.ROW_HEIGHT_PT}]\n\\hline"
+            r"No vehicle class selected & \multicolumn{5}{c|}{N/A} \\\\" + f"[{TABLE_STYLE.ROW_HEIGHT_PT}]\n\\hline"
         )
 
     vehicle_table_body = "\n".join(vehicle_rows)
@@ -342,29 +302,38 @@ def ch3_loads(input_dict):
         label="tab:ch3-dl-dw"
     )
 
-    # Table 3.3: Two-level header for vehicle parameters (Live Loads)
-    t33_header = (
-        r"\begin{longtable}{|C{2.6cm}|C{2.4cm}|C{2.2cm}|C{2.2cm}|C{2.8cm}|C{2.4cm}|}" + "\n"
-        r"\caption{\textbf{Vehicle Live Load Parameters (IRC 6:2017)}}\label{tab:ch3-live-loads}\\" + "\n"
-        r"\hline" + "\n"
-        r"\multirow{2}{*}{\textbf{Vehicle Class}} & \multirow{2}{*}{\textbf{\makecell{Total Load\\(kN)}}} & \multirow{2}{*}{\textbf{\makecell{Impact\\Factor}}} & \multicolumn{3}{c|}{\textbf{Braking Load}} \\" + "\n"
-        r"\cline{4-6}" + "\n"
-        r" & & & \textbf{Considered?} & \textbf{Value} & \textbf{Eccentricity} \\" + "\n"
-        r"\hline" + "\n"
-        r"\endfirsthead" + "\n\n"
-        r"\multicolumn{6}{c}{\tablename\ \thetable\ -- \textit{Continued from previous page}} \\[4pt]" + "\n"
-        r"\hline" + "\n"
-        r"\multirow{2}{*}{\textbf{Vehicle Class}} & \multirow{2}{*}{\textbf{\makecell{Total Load\\(kN)}}} & \multirow{2}{*}{\textbf{\makecell{Impact\\Factor}}} & \multicolumn{3}{c|}{\textbf{Braking Load}} \\" + "\n"
-        r"\cline{4-6}" + "\n"
-        r" & & & \textbf{Considered?} & \textbf{Value} & \textbf{Eccentricity} \\" + "\n"
-        r"\hline" + "\n"
-        r"\endhead" + "\n\n"
-        r"\hline" + "\n"
-        r"\multicolumn{6}{r}{\footnotesize\textit{Continued on next page\dots}} \\" + "\n"
-        r"\endfoot" + "\n\n"
-        r"\hline" + "\n"
-        r"\endlastfoot" + "\n"
-    )
+    # Table 3.3: Vehicle load parameters; centrifugal values remain explicit when unsupported.
+    vehicle_headers = [
+        r"\textbf{Vehicle Class}",
+        r"\textbf{\makecell{Total Load\\(kN)}}",
+        r"\textbf{\makecell{Impact\\Factor}}",
+        r"\textbf{\makecell{Braking Load\\(kN)}}",
+        r"\textbf{\makecell{Eccentricity\\(m)}}",
+        r"\textbf{\makecell{Centrifugal Force\\(kN)}}",
+    ]
+    row_end = chr(92) * 2
+    vehicle_header_row = " & ".join(vehicle_headers) + " " + row_end
+    t33_header = "\n".join([
+        r"\begin{longtable}{|C{2.5cm}|C{1.7cm}|C{1.7cm}|C{1.7cm}|C{1.8cm}|C{2.0cm}|}",
+        r"\caption{\textbf{Vehicle Live Load Parameters (IRC 6:2017)}}\label{tab:ch3-live-loads}" + row_end,
+        r"\hline",
+        vehicle_header_row,
+        r"\hline",
+        r"\endfirsthead",
+        "",
+        r"\multicolumn{6}{c}{\tablename\ \thetable\ -- \textit{Continued from previous page}} " + row_end + "[4pt]",
+        r"\hline",
+        vehicle_header_row,
+        r"\hline",
+        r"\endhead",
+        "",
+        r"\hline",
+        r"\multicolumn{6}{r}{\footnotesize\textit{Continued on next page\dots}} " + row_end,
+        r"\endfoot",
+        "",
+        r"\hline",
+        r"\endlastfoot",
+    ]) + "\n"
 
     # Table 3.4: Distinct Footway Live Load Table
     hdr_t34 = build_longtable_header(
@@ -428,7 +397,7 @@ This section summarizes all dead loads, vehicle live loads, pedestrian loads, en
 \vspace{0.8em}
 """ + t33_header + vehicle_table_body + r"""
 \end{longtable}
-\noindent\textit{Note: Live loads and impact factors are applied in accordance with IRC 6:2017 Cl. 204 and Cl. 208. Longitudinal braking forces are calculated per Cl. 211 with standard load eccentricity.}
+\noindent\textit{Vehicle rows follow the active UI selection. Braking loads follow IRC 6:2017 Cl. 211. Centrifugal force is reported as N/A because the current bridge inputs do not provide curvature data for its calculation.}
 
 \vspace{1.0em}
 """ + hdr_t34 + r"""

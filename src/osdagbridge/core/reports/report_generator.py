@@ -103,7 +103,7 @@
 #                                                          else → CustomMessageBox("Report Saved")
 #==============================================================================
 
-import os, shutil, logging, datetime, tempfile, subprocess
+import os, shutil, logging, datetime, tempfile, subprocess, math
 from dataclasses import dataclass, field
 from typing import Optional, List, Literal
 
@@ -214,7 +214,7 @@ def preamble(project_name, job_number, report_date, report_version='Rev 0'):
   \renewcommand{\footrule}{%
     \ifbool{hasSDonPage}{%
       \vspace{-12pt}%
-      \hbox to \headwidth{\textcolor{black}{\footnotesize\textit{* Software default value}}\hfil}%
+      \hbox to \headwidth{\textcolor{textMain}{\footnotesize\textit{* Software default value}}\hfil}%
       \vspace{2pt}%
     }{%
       \vspace{-4pt}%
@@ -232,7 +232,7 @@ def preamble(project_name, job_number, report_date, report_version='Rev 0'):
   \renewcommand{\footrule}{%
     \ifbool{hasSDonPage}{%
       \vspace{-12pt}%
-      \hbox to \headwidth{\textcolor{black}{\footnotesize\textit{* Software default value}}\hfil}%
+      \hbox to \headwidth{\textcolor{textMain}{\footnotesize\textit{* Software default value}}\hfil}%
       \vspace{2pt}%
     }{%
       \vspace{-4pt}%
@@ -586,8 +586,8 @@ class ReportDataBridge:
             if val is not None:
                 ur = float(val)
                 if ur <= 1.0:
-                    return r"\textcolor{black}{PASS}"
-                return r"\textcolor{red}{FAIL}"
+                    return r"\textcolor{passGreen}{PASS}"
+                return r"\textcolor{failRed}{FAIL}"
         except (TypeError, ValueError):
             pass
         return ""
@@ -904,78 +904,109 @@ def generate_report(payload, request):
 
             # ── Programmatically generate Material Quantity Bar Charts (Chapter 7) ──
             try:
-                g_wt = _safe_float(payload.inputs.get("steel_girders_wt_total", 0))
-                cb_wt = (
-                    _safe_float(payload.inputs.get("bracing_top_wt_total", 0)) +
-                    _safe_float(payload.inputs.get("bracing_bot_wt_total", 0)) +
-                    _safe_float(payload.inputs.get("bracing_diag_wt_total", 0))
+                g_wt = _safe_float(payload.inputs.get("steel_girders_wt_total"), default=float("nan"))
+                cb_keys = (
+                    "bracing_top_wt_total",
+                    "bracing_bot_wt_total",
+                    "bracing_diag_wt_total",
                 )
-                studs_wt = _safe_float(payload.inputs.get("shear_studs_wt_total", 0))
-                ed_wt = _safe_float(payload.inputs.get("end_diaphragm_wt_total", 0)) or (studs_wt if studs_wt > 0 else 2.5)
-                
+                cb_components = []
+                for key in cb_keys:
+                    try:
+                        component_weight = float(payload.inputs.get(key))
+                        if math.isfinite(component_weight) and component_weight >= 0:
+                            cb_components.append(component_weight)
+                    except (TypeError, ValueError):
+                        continue
+                cb_wt = sum(cb_components) if cb_components else None
+                ed_wt = _safe_float(
+                    payload.inputs.get("end_diaphragm_wt_total"), default=float("nan")
+                )
+
                 steel_data = {
-                    "Steel Plate Girders": g_wt if g_wt > 0 else 45.2,
-                    "Cross Bracing": cb_wt if cb_wt > 0 else 6.8,
-                    "End Diaphragms / Stiffeners": ed_wt if ed_wt > 0 else 2.5
+                    "Steel Plate Girders": max(0.0, g_wt) if math.isfinite(g_wt) else None,
+                    "Cross Bracing": cb_wt,
+                    "End Diaphragms": max(0.0, ed_wt) if math.isfinite(ed_wt) else None,
                 }
-                steel_chart_path = os.path.join(tmp_images, "steel_tonnage.png")
-                generate_steel_tonnage_chart(steel_data, steel_chart_path)
-                fig_paths["steel_tonnage"] = steel_chart_path.replace('\\', '/')
-                
-                concrete_vol = _safe_float(payload.inputs.get("concrete_deck_vol_total", 0))
-                rebar_wt = _safe_float(payload.inputs.get("rebar_deck_wt_total", 0))
-                conc_chart_path = os.path.join(tmp_images, "concrete_vs_rebar.png")
-                generate_concrete_vs_rebar_chart(concrete_vol if concrete_vol > 0 else 62.4, rebar_wt if rebar_wt > 0 else 9.3, conc_chart_path)
-                fig_paths["concrete_vs_rebar"] = conc_chart_path.replace('\\', '/')
+                if any(value is not None and value > 0 for value in steel_data.values()):
+                    steel_chart_path = os.path.join(tmp_images, "steel_tonnage.png")
+                    if generate_steel_tonnage_chart(steel_data, steel_chart_path):
+                        fig_paths["steel_tonnage"] = steel_chart_path.replace('\\', '/')
+
+                concrete_vol = _safe_float(
+                    payload.inputs.get("concrete_deck_vol_total"), default=float("nan")
+                )
+                rebar_wt = _safe_float(
+                    payload.inputs.get("rebar_deck_wt_total"), default=float("nan")
+                )
+                if math.isfinite(concrete_vol) or math.isfinite(rebar_wt):
+                    conc_chart_path = os.path.join(tmp_images, "concrete_vs_rebar.png")
+                    if generate_concrete_vs_rebar_chart(
+                        concrete_vol if math.isfinite(concrete_vol) else None,
+                        rebar_wt if math.isfinite(rebar_wt) else None,
+                        conc_chart_path,
+                    ):
+                        fig_paths["concrete_vs_rebar"] = conc_chart_path.replace('\\', '/')
             except Exception as e:
                 logger.warning("Material quantity chart generation failed: %s", e)
 
             # ── Programmatically generate Utilization Ratio Summary Chart (Section 5.5) ──
             try:
+                def _nested_ratios(value):
+                    ratios = []
+                    if isinstance(value, dict):
+                        for key, item in value.items():
+                            key_name = str(key).lower()
+                            if any(token in key_name for token in ("dcr", "ur", "efficiency", "utilization_ratio")):
+                                try:
+                                    ratio = float(item)
+                                    if math.isfinite(ratio) and ratio >= 0:
+                                        ratios.append(ratio)
+                                except (TypeError, ValueError):
+                                    pass
+                            elif isinstance(item, (dict, list, tuple)):
+                                ratios.extend(_nested_ratios(item))
+                    elif isinstance(value, (list, tuple)):
+                        for item in value:
+                            ratios.extend(_nested_ratios(item))
+                    return ratios
+
                 pg_checks = (payload.output_dict.get("design_results", {}) or {}).get("per_girder", {}) or {}
-                max_girder_ur = 0.0
-                for g, gd in pg_checks.items():
-                    for chk in (gd.get("checks") or []):
+                girder_ratios = []
+                for girder, data in pg_checks.items():
+                    if str(girder).startswith("EB"):
+                        continue
+                    for check in (data.get("checks") or []):
                         try:
-                            max_girder_ur = max(max_girder_ur, float(chk.get("dcr") or 0.0))
-                        except Exception:
+                            ratio = float(check.get("dcr"))
+                            if math.isfinite(ratio) and ratio >= 0:
+                                girder_ratios.append(ratio)
+                        except (TypeError, ValueError):
                             pass
-                if max_girder_ur == 0.0:
-                    max_girder_ur = 0.76
+                max_girder_ur = max(girder_ratios) if girder_ratios else None
 
                 dd_results = payload.output_dict.get("deck_design_results", {}) or {}
-                max_deck_ur = 0.0
-                for k, v in dd_results.items():
-                    if "ur" in k.lower() or "dcr" in k.lower() or "ratio" in k.lower():
-                        try:
-                            max_deck_ur = max(max_deck_ur, float(v))
-                        except Exception:
-                            pass
-                if max_deck_ur == 0.0:
-                    max_deck_ur = 0.65
+                deck_ratios = _nested_ratios(dd_results)
+                max_deck_ur = max(deck_ratios) if deck_ratios else None
 
-                max_cb_ur = 0.0
-                for pair in bridge.get_cb_pairs():
-                    for member in ("diagonal", "chord"):
-                        try:
-                            eff = bridge.get_cb_efficiency(pair, member, "compression")
-                            max_cb_ur = max(max_cb_ur, float(eff))
-                        except Exception:
-                            pass
-                if max_cb_ur == 0.0:
-                    max_cb_ur = 0.42
+                cb_results = payload.output_dict.get("crossbracing_design_results", {}) or {}
+                cb_ratios = _nested_ratios(cb_results)
+                max_cb_ur = max(cb_ratios) if cb_ratios else None
 
-                max_ed_ur = 0.38
-                
+                ed_results = payload.output_dict.get("end_diaphragm_design_results", {}) or {}
+                ed_ratios = _nested_ratios(ed_results)
+                max_ed_ur = max(ed_ratios) if ed_ratios else None
+
                 ur_summary_data = {
-                    "Steel Plate Girders": round(max_girder_ur, 2),
-                    "Concrete Deck Slab": round(max_deck_ur, 2),
-                    "Cross Bracing": round(max_cb_ur, 2),
-                    "End Diaphragms": round(max_ed_ur, 2),
+                    "Steel Plate Girders": round(max_girder_ur, 2) if max_girder_ur is not None else None,
+                    "Concrete Deck Slab": round(max_deck_ur, 2) if max_deck_ur is not None else None,
+                    "Cross Bracing": round(max_cb_ur, 2) if max_cb_ur is not None else None,
+                    "End Diaphragms": round(max_ed_ur, 2) if max_ed_ur is not None else None,
                 }
-                ur_chart_path = os.path.join(tmp_images, "ur_summary.png")
-                generate_ur_summary_chart(ur_summary_data, ur_chart_path)
-                fig_paths["ur_summary"] = ur_chart_path.replace('\\', '/')
+                if any(value is not None for value in ur_summary_data.values()):
+                    ur_chart_path = os.path.join(tmp_images, "ur_summary.png")
+                    if generate_ur_summary_chart(ur_summary_data, ur_chart_path):
+                        fig_paths["ur_summary"] = ur_chart_path.replace('\\', '/')
             except Exception as e:
                 logger.warning("UR summary chart generation failed: %s", e)
 

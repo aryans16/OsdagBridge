@@ -1,4 +1,4 @@
-# OsdagBridge LaTeX Report Generator Refactoring & Technical Report
+﻿# OsdagBridge LaTeX Report Generator Refactoring & Technical Report
 
 **Project:** OsdagBridge Plugin — LaTeX Design Report Generator  
 **Organization:** FOSSEE, Indian Institute of Technology Bombay (IIT Bombay)  
@@ -13,7 +13,7 @@ This report documents the architectural refactoring, typographical enhancements,
 
 The previous report generator presented several layout and visual defects, including missing repeated table headers across page boundaries, content bleeding into footer margins (notably the "G4" girder block on page 30), merged vehicle and footway load tables lacking standardized unit columns, absence of graphical summaries for utilization ratios and material quantities, and hardcoded layout parameters scattered across multiple scripts.
 
-All six core requirements outlined in the task specification have been resolved. The refactored codebase establishes a **centralized Single Source of Truth (`styles.py`)**, introduces high-resolution dynamic Matplotlib chart generation (`visualizations.py`), standardizes multi-page tables via PyLaTeX/LaTeX `longtable` continuation protocols, and guarantees clean pagination without header/footer collisions.
+The implementation addresses the six numbered areas in the task brief. Vehicle rows follow the active UI selections; when a requested value cannot be calculated from the current input model, the report identifies it as unavailable instead of substituting a sample value. The saved `Report_After.pdf` still needs to be regenerated from a fresh design run after these code changes.
 
 ---
 
@@ -28,7 +28,9 @@ All six core requirements outlined in the task specification have been resolved.
 | `src/osdagbridge/core/reports/chap3.py` | **Modified** | Separated Vehicle Live Loads and Footway Live Loads into distinct tables; structured vehicle parameters with unit columns (Total Load, Impact Factor, Braking Load parameters); implemented repeated headers. |
 | `src/osdagbridge/core/reports/chap4.py` | **Modified** | Standardized `Reactions at Supports` and `Deflection Summary` tables with `longtable` continuation headers. |
 | `src/osdagbridge/core/reports/chap5.py` | **Modified** | Embedded dynamic Utilization Ratio summary chart into Section 5.5; implemented page-break threshold controls between girder blocks to eliminate the G4 footer overlap defect; standardized Table 5.1 through Table 5.22 with repeated headers. |
+| `src/osdagbridge/core/reports/chap6.py` | **Modified** | Replaced a hardcoded figure width with a shared style macro. |
 | `src/osdagbridge/core/reports/chap7.py` | **Modified** | Embedded Structural Steel Tonnage breakdown chart and Concrete Volume vs. Reinforcement Weight chart; upgraded Bill of Materials (Table 7.1) to use repeated headers. |
+| `src/osdagbridge/core/reports/chap8.py` | **Modified** | Replaced hardcoded colors and local table padding with shared style definitions. |
 
 ---
 
@@ -69,7 +71,7 @@ styles.py (Single Source of Truth)
 
 ### 3.2 Key Rationale for Design Choices
 1. **Centralized Tokenization:** Colors and dimensions are defined as immutable frozen dataclasses, ensuring consistency between LaTeX document rendering and Matplotlib chart generation.
-2. **Maintenance Simplicity:** Global styling changes (e.g. altering corporate branding colors or standard margins) can be executed from a single file without modifying individual chapter logic.
+2. **Maintenance Simplicity:** Shared colors, page geometry, common table spacing, and chart styling can be changed centrally. Table column widths that depend on the chapter's data remain alongside their table definitions.
 3. **Encapsulated Continuation Logic:** The `build_longtable_header()` helper abstracts the verbose LaTeX boilerplate (`\endfirsthead`, `\endhead`, `\endfoot`, `\endlastfoot`), guaranteeing standard table headers across all pages.
 
 ---
@@ -120,8 +122,9 @@ styles.py (Single Source of Truth)
      - Total Load (kN)
      - Impact Factor (dynamically computed per IRC 6 Cl. 208)
      - Braking Load sub-headers: *Considered?*, *Value (kN)*, *Eccentricity (m)*
-  2. **Table 3.4 (Pedestrian / Footway Live Load):** Separated into an independent table recording footway intensity ($5.000\text{ kN/m}^2$), provision status, application area, and IRC 6 Cl. 206.1 code clauses.
-- **Result:** Clean, compliant load presentation matching IRC 6 standard formats.
+  2. **Table 3.4 (Pedestrian / Footway Live Load):** Separated into an independent table recording footway intensity, provision status, application area, and IRC 6 Cl. 206.1 code clauses.
+  3. Vehicle classes now reflect the active UI selection; excluded custom vehicles are omitted. Missing span/lane values no longer trigger hardcoded impact/braking figures. The table includes a centrifugal-force column, marked N/A because the current input model has no curvature data to calculate it.
+- **Result:** Better structured loads with explicit units and no invented fallback values. Centrifugal force calculation remains unsupported until bridge curvature inputs and analysis are available.
 
 ### 4.4 Utilization Ratio Summary Visualizations (Requirement 4)
 - **Problem:** Section 5.5 (Overall Design Check Summary) only contained a tabular summary without graphical insight into design margins.
@@ -129,19 +132,20 @@ styles.py (Single Source of Truth)
   - Implemented `generate_ur_summary_chart()` in `visualizations.py` using Matplotlib (Agg backend).
   - Primary elements included on X-axis: **Steel Plate Girders**, **Concrete Deck Slab**, **Cross Bracing**, and **End Diaphragms**.
   - Programmatically draws a distinct horizontal reference line at $UR = 1.0$ (Red dashed line, linewidth = 1.6) labeled `Design Limit (UR = 1.00)`.
-  - Bars are dynamically colored green (`#27AE60`) for passing ($UR \leq 1.0$) and red (`#C0392B`) for failing ($UR > 1.0$), with numerical ratios and status badges annotated on top of each bar.
+  - Bars are dynamically colored green (`#27AE60`) for passing ($UR \leq 1.0$) and red (`#C0392B`) for failing ($UR > 1.0$), with numerical ratios and status badges annotated on top of each bar. Missing component results are shown as N/A; they are not filled with sample ratios.
   - Dynamically embedded into Section 5.5 as Figure 5.1.
 
 ### 4.5 Material Quantity Bar Charts (Requirement 5)
 - **Problem:** Chapter 7 (Material Take-off) lacked visual representation of material distribution.
 - **Solution:**
   1. **Structural Steel Tonnage Breakdown:** Generated bar chart comparing steel consumption across Girders, Cross Bracing, and End Diaphragms/Stiffeners in Metric Tonnes (MT), annotated with percentage shares.
-  2. **Concrete vs. Reinforcement Chart:** Generated side-by-side comparison chart illustrating Concrete Deck Volume ($m^3$) versus Reinforcement Steel Weight (MT).
+  2. **Concrete vs. Reinforcement Chart:** Generated side-by-side chart illustrating Concrete Deck Volume ($m^3$) versus Reinforcement Steel Weight (MT) on separate axes because their units differ.
+  3. Missing material quantities are not replaced with sample numbers; unavailable chart categories are labelled N/A.
   3. Embedded into Chapter 7 as Figures 7.1 and 7.2 using LaTeX figure environments.
 
 ---
 
-## 5. Visual Enhancements & Polish (Requirement 4 Deliverable)
+## 5. Visual Enhancements & Polish
 
 Beyond the functional fixes, the following professional aesthetic enhancements were applied:
 1. **Typography & Hierarchy:** Standardized section titles, captions, and table fonts to improve legibility.
@@ -153,5 +157,6 @@ Beyond the functional fixes, the following professional aesthetic enhancements w
 
 ## 6. Verification and Comparison
 
-- **`Report_Before.pdf`**: Captured original baseline state exhibiting the page 30 footer bleed, missing table headers on subsequent pages, and lack of visual charts.
-- **`Report_After.pdf`**: Reflects the refactored layout with repeated headers, corrected margins, separate load tables, and programmatic UR and Material Quantity bar charts.
+- Python syntax compilation and focused report-generation smoke checks passed for selected vehicle handling, missing-data handling, style macros, and the three chart functions. The smoke-test chart previews were visually inspected.
+- The existing `src/Report_after.tex` references temporary image files that no longer exist and still contains the previous hardcoded braking value. It and the paired PDF do not reflect the final code changes. Regenerate the report from a real bridge design run, then inspect all pages before submission.
+- `Report_Before.pdf` remains the original baseline artifact for comparison.

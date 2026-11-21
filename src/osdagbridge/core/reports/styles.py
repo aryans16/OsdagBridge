@@ -79,6 +79,11 @@ class TableConfig:
     LTPRE: str = "4pt"               # Spacing before longtable
     LTPOST: str = "6pt"              # Spacing after longtable
     ROW_HEIGHT_PT: str = "6pt"       # Standard row break spacing e.g. \\[6pt]
+    COMPACT_TABCOLSEP: str = "4pt"
+    TIGHT_TABCOLSEP: str = "3.5pt"
+    NARROW_TABCOLSEP: str = "3pt"
+    TALL_ARRAYSTRETCH: float = 1.25
+    CAPTION_SKIP: str = "2pt"
 
 
 TABLE_STYLE = TableConfig()
@@ -128,6 +133,8 @@ def get_latex_preamble_definitions() -> str:
 \\definecolor{{failRed}}{{HTML}}{{{COLORS.FAIL.lstrip('#')}}}
 \\definecolor{{tableZebra}}{{HTML}}{{{COLORS.ROW_ZEBRA.lstrip('#')}}}
 \\definecolor{{borderGray}}{{HTML}}{{{COLORS.BORDER_GRAY.lstrip('#')}}}
+\\definecolor{{textMain}}{{HTML}}{{{COLORS.TEXT_MAIN.lstrip('#')}}}
+\\definecolor{{textMuted}}{{HTML}}{{{COLORS.TEXT_MUTED.lstrip('#')}}}
 
 % --- Global Table Geometry & Padding (from styles.py) ---
 \\setlength{{\\tabcolsep}}{{{TABLE_STYLE.TABCOLSEP}}}
@@ -136,6 +143,15 @@ def get_latex_preamble_definitions() -> str:
 \\setlength{{\\arrayrulewidth}}{{{TABLE_STYLE.ARRAYRULEWIDTH}}}
 \\setlength{{\\LTpre}}{{{TABLE_STYLE.LTPRE}}}
 \\setlength{{\\LTpost}}{{{TABLE_STYLE.LTPOST}}}
+\\newcommand{{\\reportTabColSepCompact}}{{{TABLE_STYLE.COMPACT_TABCOLSEP}}}
+\\newcommand{{\\reportTabColSepTight}}{{{TABLE_STYLE.TIGHT_TABCOLSEP}}}
+\\newcommand{{\\reportTabColSepNarrow}}{{{TABLE_STYLE.NARROW_TABCOLSEP}}}
+\\newcommand{{\\reportArrayStretchTall}}{{{TABLE_STYLE.TALL_ARRAYSTRETCH}}}
+\\newcommand{{\\reportCaptionSkip}}{{{TABLE_STYLE.CAPTION_SKIP}}}
+\\newcommand{{\\reportFigureWidth}}{{0.85\\textwidth}}
+\\newcommand{{\\reportFigureWideWidth}}{{0.96\\textwidth}}
+\\newcommand{{\\reportMaterialFigureWidth}}{{0.92\\textwidth}}
+\\newcommand{{\\reportMaterialCompactFigureWidth}}{{0.78\\textwidth}}
 
 % --- Threshold Constraints to Prevent Footer Margin Bleed ---
 \\BeforeBeginEnvironment{{table}}{{\\needspace{{{GEOMETRY.NEEDSPACE_TABLE}\\baselineskip}}}}
