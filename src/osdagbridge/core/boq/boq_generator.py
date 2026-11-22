@@ -334,10 +334,12 @@ def calculate_material_quantities(inputs: dict, outputs: dict) -> dict:
         KEY_CB_AREA = "typical_section.crash_barrier.area"
         cb_area = 0.0
         cb_area_val = inputs.get(KEY_CB_AREA)
-        
         if cb_area_val is not None:
             try:
-                cb_area = float(cb_area_val) / 1e6
+                raw_area = float(cb_area_val)
+                # Saved UI inputs use mm²; some design paths already normalize
+                # the same field to m² before the report is built.
+                cb_area = raw_area / 1e6 if abs(raw_area) >= 10.0 else raw_area
             except Exception:
                 pass
         

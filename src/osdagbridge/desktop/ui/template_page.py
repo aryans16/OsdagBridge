@@ -1759,7 +1759,13 @@ class CustomWindow(QWidget):
 
         create_report_action = QAction("Create Design Report", self)
         create_report_action.setShortcut(QKeySequence("Alt+C"))
-        create_report_action.triggered.connect(lambda _: self.open_report_dialog())
+        # Use the same report entry point as OutputDock so the live CAD views,
+        # sections, braces, and analysis plots are captured before opening the
+        # report options dialog.
+        create_report_action.triggered.connect(
+            lambda _checked=False: self.output_dock._on_report_clicked()
+            if self.output_dock is not None else self.open_report_dialog()
+        )
         file_menu.addAction(create_report_action)
 
         file_menu.addSeparator()

@@ -1,41 +1,44 @@
-from typing import List
-
 from osdagbridge.core.utils.common import (
     KEY_DESIGN_MODE
 )
+from osdagbridge.core.reports.report_utils import _tex
 
 
-def ch8_design_log(log_entries: List[str], input_dict: dict) -> str:
-    """Render Chapter 8 using real log_entries, matching Osdag color convention."""
-
-    lines_tex = []
-    if log_entries:
-        for entry in log_entries:
-            for raw_line in entry.split('\n'):
-                line = raw_line.strip()
-                if not line:
-                    continue
-                escaped = (line
-                    .replace('_', r'\_')
-                    .replace('%', r'\%')
-                    .replace('&', r'\&')
-                    .replace('#', r'\#'))
-                upper = line.upper()
-                if 'WARNING' in upper:
-                    lines_tex.append(
-                        rf'\textcolor{{steelBlue}}{{{escaped}}}\\')
-                elif 'ERROR' in upper:
-                    lines_tex.append(
-                        rf'\textcolor{{failRed}}{{{escaped}}}\\')
-                elif 'INFO' in upper:
-                    lines_tex.append(
-                        rf'\textcolor{{osdagGreen}}{{{escaped}}}\\')
-                else:
-                    continue  # skip lines without a known level — Osdag patter
-
+def ch8_standards_assumptions(input_dict: dict) -> str:
+    """Render the standards and assumptions chapter."""
     mode = str(input_dict.get(KEY_DESIGN_MODE, 'Optimized')).strip().lower()
     is_custom = mode in {'custom', 'customized'}
     return _ch8_assumptions(is_custom)
+
+
+def ch9_design_log(log_entries) -> str:
+    """Render captured design-stage messages; never silently omit the chapter."""
+    lines = []
+    for entry in log_entries or []:
+        if not isinstance(entry, str):
+            continue
+        line = entry.strip()
+        if not line or line.startswith("__progress__"):
+            continue
+        upper = line.upper()
+        if "ERROR" in upper or "FAILED" in upper:
+            color = "failRed"
+        elif "WARNING" in upper:
+            color = "steelBlue"
+        else:
+            color = "osdagGreen"
+        lines.append(r"\item \textcolor{" + color + r"}{" + _tex(line) + "}")
+
+    body = ("\\begin{itemize}\n" + "\n".join(lines) + "\n\\end{itemize}") if lines else (
+        r"\textit{No design log entries were captured for this run.}"
+    )
+    return r"""
+\chapter{Design Log}
+\label{ch:design-log}
+
+This chapter lists the design-stage messages captured by OsdagBridge for this run.
+
+""" + body + "\n"
 
 
 def _ch8_assumptions(is_custom: bool) -> str:
@@ -63,15 +66,15 @@ form the basis of all design calculations in this software.
 \hline
 \textbf{Code} & \textbf{Year} & \textbf{Title / Scope} \\ 
 \hline
-IRC 5 & 2015 & General Features of Design - carriageway widths, kerb, footpath dimensions \\ 
+IRC 5 & 2024 & General Features of Design - carriageway widths, kerb, footpath dimensions \\
 \hline
 IRC 6 & 2017 & Loads and Load Combinations - dead load, live load, impact, wind, temperature, etc. \\ 
 \hline
-IRC 22 & 2015 & Composite Construction (LS) - Composite section properties, ULS/SLS design, shear connectors \\ 
+IRC 22 & 2015 & Composite Construction (LS) - Composite section properties, ULS/SLS design, shear connectors \\
 \hline
 IRC 24 & 2010 & Steel Road Bridges (LS) - Stiffener design, skew angle limits, diaphragm requirements \\ 
 \hline
-IRC 112 & 2020 & Concrete Road Bridges - Deck slab flexure, shear, crack width, reinforcement \\ 
+IRC 112 & 2020 & Concrete Road Bridges - Deck slab flexure, shear, crack width, reinforcement \\
 \hline
 IRC SP 114 & 2018 & Seismic Design of Road Bridges \\ 
 \hline

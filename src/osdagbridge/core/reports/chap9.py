@@ -1,7 +1,7 @@
 def references():
     return r"""
-\chapter*{References}
-\addcontentsline{toc}{chapter}{References}
+\chapter{References}
+\label{ch:references}
 
 
 \begin{enumerate}

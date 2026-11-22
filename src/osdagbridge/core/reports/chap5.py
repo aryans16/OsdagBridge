@@ -122,6 +122,7 @@ from osdagbridge.core.utils.common import (
     KEY_SD_STIFF_METHOD,
     KEY_SD_STRESS_STEEL,
     KEY_SD_STRESS_STEEL_ALLOWABLE,
+    KEY_SPAN,
     KEY_SD_TOP_FLANGE_THICKNESS,
     KEY_SD_TOP_FLANGE_WIDTH,
     KEY_SD_TOTAL_DEPTH,
@@ -131,7 +132,6 @@ from osdagbridge.core.utils.common import (
     KEY_SD_WEB_CLASS_LIMIT,
     KEY_SD_WEB_SLENDERNESS,
     KEY_SD_WEB_THICKNESS,
-    KEY_SPAN,
     KEY_TS_DECK_OVERHANG,
     KEY_TS_DECK_THICKNESS,
     KEY_TS_NO_OF_GIRDERS,
@@ -141,7 +141,9 @@ from osdagbridge.core.utils.common import (
     KEY_UTIL_SHEAR
 )
 
-from osdagbridge.core.reports.report_utils import _tex, _render_value, get_girder_entries
+from osdagbridge.core.reports.report_utils import (
+    _render_value, _render_value_or_na, _tex, get_girder_entries,
+)
 from osdagbridge.core.reports.styles import build_longtable_header, TABLE_STYLE
 
 if TYPE_CHECKING:
@@ -340,17 +342,17 @@ def ch5_design_checks(checks_data, bridge, fig_paths=None) -> str:
     t57_rows = []
     for lbl, _ in girder_entries:
         t57_rows.append(
-            r"\multirow{6}{*}{\makecell{" + lbl + r"""}} & \textnormal{Shear Buckling Design Method} & """ + _render_value(bridge.output_dict, KEY_SD_STIFF_METHOD) + r""" \\[6pt]
+            r"\multirow{6}{*}{\makecell{" + lbl + r"""}} & \textnormal{Shear Buckling Design Method} & """ + _render_value_or_na(bridge.output_dict, KEY_SD_STIFF_METHOD) + r""" \\[6pt]
 \cline{2-3}
- & \textnormal{Intermediate Stiffener Thickness (mm)} & """ + _render_value(bridge.output_dict, KEY_SD_STIFF_INT_THICK) + r""" \\[6pt]
+ & \textnormal{Intermediate Stiffener Thickness (mm)} & """ + _render_value_or_na(bridge.output_dict, KEY_SD_STIFF_INT_THICK) + r""" \\[6pt]
 \cline{2-3}
- & \textnormal{Intermediate Stiffener Spacing (mm)} & """ + _render_value(bridge.output_dict, KEY_SD_STIFF_INT_SPACING) + r""" \\[6pt]
+ & \textnormal{Intermediate Stiffener Spacing (mm)} & """ + _render_value_or_na(bridge.output_dict, KEY_SD_STIFF_INT_SPACING) + r""" \\[6pt]
 \cline{2-3}
- & \textnormal{End Panel Stiffener Thickness (mm)} & """ + _render_value(bridge.output_dict, KEY_SD_STIFF_END_THICK) + r""" \\[6pt]
+ & \textnormal{End Panel Stiffener Thickness (mm)} & """ + _render_value_or_na(bridge.output_dict, KEY_SD_STIFF_END_THICK) + r""" \\[6pt]
 \cline{2-3}
- & \textnormal{No. of End Panel Stiffeners} & """ + _render_value(bridge.output_dict, KEY_SD_STIFF_END_COUNT) + r""" \\[6pt]
+ & \textnormal{No. of End Panel Stiffeners} & """ + _render_value_or_na(bridge.output_dict, KEY_SD_STIFF_END_COUNT) + r""" \\[6pt]
 \cline{2-3}
- & \textnormal{Longitudinal Stiffeners} & """ + _render_value(bridge.output_dict, KEY_SD_STIFF_LONG) + r""" \\[6pt]
+ & \textnormal{Longitudinal Stiffeners} & """ + _render_value_or_na(bridge.output_dict, KEY_SD_STIFF_LONG) + r""" \\[6pt]
 \hline"""
         )
     t57_content = "\n".join(t57_rows)
@@ -1048,11 +1050,34 @@ Fatigue Shear Resistance, $Q_r$ & IRC 22 Table 8 ($\phi d$, $N_{sc}$) & """
         (_ur_522(_dk_gov_wk / _wk_lim) if (_dk_has and _wk_lim > 0) else "---"),
     )
 
+    # Keep the overall summary aligned with the dedicated total-load
+    # serviceability check (Table 5.10), rather than selecting an unrelated
+    # per-load-case deflection entry.
+    _deflection_summary = ("---", "N/A", "N/A", "---")
+    try:
+        _span_mm = float(bridge.input_dict.get(KEY_SPAN)) * 1000.0
+        _deflection_limit = _span_mm / 600.0
+        _deflections = [
+            float(bridge.output_dict.get(f"{KEY_SD_DEFL_TOTAL}.G{gi}"))
+            for gi in range(1, int(bridge.input_dict.get(KEY_TS_NO_OF_GIRDERS, 0) or 0) + 1)
+            if bridge.output_dict.get(f"{KEY_SD_DEFL_TOTAL}.G{gi}") not in (None, "")
+        ]
+        if _deflections and _deflection_limit > 0:
+            _max_deflection = max(_deflections)
+            _deflection_summary = (
+                "Total load",
+                f"{_max_deflection:.2f} mm",
+                f"{_deflection_limit:.2f} mm",
+                _ur_522(_max_deflection / _deflection_limit),
+            )
+    except (TypeError, ValueError):
+        pass
+
     _t522 = [
         _row522(r"Girder --- Moment",             _dcr_row({1})),
         _row522(r"Girder --- Shear",              _dcr_row({2})),
         _row522(r"Girder --- LTB (constr.)",      _dcr_row({5})),
-        _row522(r"Girder --- Deflection",         _dcr_row({13, 14}, fallback_unit="mm")),
+        _row522(r"Girder --- Deflection",         _deflection_summary),
         _row522(r"Girder --- Stress",             _dcr_row({11}, fallback_unit="MPa")),
         _row522(r"Girder --- Fatigue",            _dcr_row({8, 9}, fallback_unit="MPa")),
         _row522(r"Transverse Shear (slab)",       _dcr_row({16})),
@@ -1178,7 +1203,7 @@ Fatigue Shear Resistance, $Q_r$ & IRC 22 Table 8 ($\phi d$, $N_{sc}$) & """
     return r"""
 \chapter{Design Checks}
 
-This section presents all structural design checks performed by OsdagBridge. For each member, the demand from the governing load combination, the code-based capacity, and the utilization ratio are tabulated. All checks reference IS 800:2007 and IRC 22:2014 unless stated otherwise.
+This section presents all structural design checks performed by OsdagBridge. For each member, the demand from the governing load combination, the code-based capacity, and the utilization ratio are tabulated. All checks reference IS 800:2007 and IRC 22:2015 unless stated otherwise.
 
 \section{Plate Girder Design}
 \label{sec:plate-girder}
@@ -1548,7 +1573,7 @@ The governing design check summary across all bridge components is presented bel
 \vspace{0.6em}
 """ + t522_header + t522_content + r"""
 \end{longtable}
-\noindent\textit{Note: UR = Demand / Capacity. All values $\leq 1.0$ indicate passing checks. The governing check for each component is highlighted in the individual design check sections above.}
+\noindent\textit{Note: UR = Demand / Capacity. Values $\leq 1.0$ pass; values $> 1.0$ fail. N/A indicates results were unavailable.}
 
 """
 

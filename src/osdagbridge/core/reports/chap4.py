@@ -50,6 +50,23 @@ def ch4_analysis(asum, fig_paths, bridge: "ReportDataBridge", span_m: float):
         for lc in all_lcs
     ) if all_lcs else r"--- & --- & --- & --- & --- & --- & --- & --- & --- \\[6pt]"
 
+    reaction_rows = []
+    for lc, values in rxn_summary.items():
+        reaction_rows.append(
+            _tex(lc) + r" & " + _fmt((values or {}).get("left_kN"))
+            + r" & " + _fmt((values or {}).get("right_kN")) + r" \\[6pt]"
+        )
+    if not reaction_rows:
+        reaction_rows.append(
+            r"\multicolumn{3}{|c|}{Reaction data unavailable for this run.} \\[6pt]"
+        )
+    reactions_header = build_longtable_header(
+        "|>{\\centering\\arraybackslash}p{5.2cm}|>{\\centering\\arraybackslash}p{5.2cm}|>{\\centering\\arraybackslash}p{5.2cm}|",
+        "Reactions at Supports",
+        ["Load Case", "Left Support (kN)", "Right Support (kN)"],
+        label="tab:ch4-reactions",
+    )
+
     _span_m         = float(bridge.input_dict.get(KEY_SPAN, 0) or 0)
     _allow_live_mm  = _span_m * 1000.0 / 800.0
     _allow_total_mm = _span_m * 1000.0 / 600.0
@@ -142,13 +159,7 @@ A grillage model was used for structural analysis. The deck is idealized as a gr
 \endgroup
 
 \vspace{1em}
-""" + build_longtable_header("|>{\\centering\\arraybackslash}p{5.2cm}|>{\\centering\\arraybackslash}p{5.2cm}|>{\\centering\\arraybackslash}p{5.2cm}|", "Reactions at Supports", ["Load Case", "Left Support (kN)", "Right Support (kN)"], label="tab:ch4-reactions") + r"""
- & """ + '' + r""" & """ + '' + r""" \\[6pt]
-\hline
- & """ + '' + r""" & """ + '' + r""" \\[6pt]
-\hline
- & """ + '' + r""" & """ + '' + r""" \\[6pt]
-\hline
+""" + reactions_header + "\n".join(reaction_rows) + r"""
 \end{longtable}
 
 \vspace{1em}

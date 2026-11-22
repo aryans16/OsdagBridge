@@ -6,6 +6,7 @@ from osdagbridge.core.reports.report_utils import _fig_or_placeholder, _render_v
 from osdagbridge.core.utils.common import (
     KEY_CARRIAGEWAY_WIDTH,
     KEY_SD_SECTION_DESIGNATION,
+    KEY_SD_DEFL_TOTAL,
     KEY_SPAN,
     KEY_STRUCTURE_TYPE,
     KEY_TS_DECK_THICKNESS,
@@ -54,6 +55,27 @@ def _max_member_efficiency(pair_designs):
     return best
 
 
+def _ratio_values(value):
+    """Collect stored DCR/UR values from nested component result payloads."""
+    found = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            key_name = str(key).lower()
+            if any(token in key_name for token in ("dcr", "ur", "efficiency", "utilization_ratio")):
+                try:
+                    ratio = float(item)
+                    if ratio >= 0:
+                        found.append(ratio)
+                except (TypeError, ValueError):
+                    pass
+            elif isinstance(item, (dict, list, tuple)):
+                found.extend(_ratio_values(item))
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            found.extend(_ratio_values(item))
+    return found
+
+
 def executive_summary(input_dict, output_dict, fig_paths) -> str:
     plan_fig = _fig_or_placeholder(fig_paths.get('girder_top'), 'Figure 1 -- Overall Bridge Plan')
     cs_fig = _fig_or_placeholder(fig_paths.get('cross_section'),
@@ -74,10 +96,10 @@ def executive_summary(input_dict, output_dict, fig_paths) -> str:
     cb_results     = output_dict.get("crossbracing_design_results", {}) or {}
     ed_results     = output_dict.get("end_diaphragm_design_results", {}) or {}
 
-    # Overall Design Status — girder checks only: Pass if every check passes,
-    # otherwise Fail with the names of the failing checks. Each check carries a
-    # pre-computed {name, dcr, status}.
-    failing = []                        # failing check names (order-preserving, deduped)
+    # Derive the summary from the same result payload used by the detailed
+    # chapters.  Never print hard-coded PASS values when a component failed or
+    # its result data is unavailable.
+    failing = []
     gov_name, gov_dcr = "", None
     girder_max_ur = None
     for g, gd in per_girder.items():
@@ -102,10 +124,70 @@ def executive_summary(input_dict, output_dict, fig_paths) -> str:
                 if girder_max_ur is None or dcr > girder_max_ur:
                     girder_max_ur = dcr
 
-    if not per_girder:
-        overall_design_status = ""
-    elif failing:
-        overall_design_status = "Fail (" + ", ".join(failing) + ")"
+
+    # The dedicated serviceability table uses these stored per-girder values;
+    # include the same total-load check here so the executive summary agrees.
+    try:
+        n_girders = int(input_dict.get(KEY_TS_NO_OF_GIRDERS, 0) or 0)
+        span_mm = float(input_dict.get(KEY_SPAN)) * 1000.0
+        total_limit_mm = span_mm / 600.0
+    except (TypeError, ValueError):
+        n_girders, total_limit_mm = 0, None
+    total_deflections = []
+    for gi in range(1, n_girders + 1):
+        try:
+            value = float(output_dict.get(f"{KEY_SD_DEFL_TOTAL}.G{gi}"))
+            total_deflections.append(value)
+        except (TypeError, ValueError):
+            continue
+    if total_deflections and total_limit_mm is not None:
+        max_total_deflection = max(total_deflections)
+        if max_total_deflection > total_limit_mm:
+            failing.append("Total Load Deflection")
+        ratio = max_total_deflection / total_limit_mm if total_limit_mm > 0 else None
+        if ratio is not None:
+            girder_max_ur = max(girder_max_ur or 0.0, ratio)
+
+    def _status_from_ratios(values):
+        ratios = []
+        for value in values:
+            try:
+                ratio = float(value)
+                if ratio >= 0:
+                    ratios.append(ratio)
+            except (TypeError, ValueError):
+                continue
+        if not ratios:
+            return "Not available"
+        return "Fail" if any(ratio > 1.0 for ratio in ratios) else "Pass"
+
+    girder_status = _status_from_ratios(
+        [chk.get("dcr") for girder, gd in per_girder.items()
+         if isinstance(gd, dict) and not str(girder).startswith("EB")
+         for chk in (gd.get("checks") or [])]
+        + ([max(total_deflections) / total_limit_mm]
+           if total_deflections and total_limit_mm and total_limit_mm > 0 else []),
+    )
+    if failing:
+        girder_status = "Fail"
+    deck_ratios = _ratio_values(deck_results)
+    deck_status = _status_from_ratios(deck_ratios)
+    cb_max_ur = _max_member_efficiency(cb_results)
+    ed_max_ur = _max_member_efficiency(ed_results)
+    cb_status = _status_from_ratios([cb_max_ur])
+    ed_status = _status_from_ratios([ed_max_ur])
+
+    component_statuses = [
+        ("Girder", girder_status), ("Deck", deck_status),
+        ("Cross bracing", cb_status), ("End diaphragm", ed_status),
+    ]
+    failed_components = [name for name, status in component_statuses if status == "Fail"]
+    unavailable_components = [name for name, status in component_statuses if status == "Not available"]
+    if failed_components:
+        details = list(dict.fromkeys(failing + failed_components))
+        overall_design_status = "Fail (" + ", ".join(details) + ")"
+    elif unavailable_components:
+        overall_design_status = "Incomplete (results unavailable: " + ", ".join(unavailable_components) + ")"
     else:
         overall_design_status = "Pass"
 
@@ -114,11 +196,10 @@ def executive_summary(input_dict, output_dict, fig_paths) -> str:
     component_urs = []                  # (ur_value, component_label)
     if girder_max_ur is not None:
         component_urs.append((girder_max_ur, "Girder"))
-    deck_max = _max_float([v for k, v in deck_results.items() if str(k).startswith("ur_")])
+    deck_max = max(deck_ratios) if deck_ratios else None
     if deck_max is not None:
         component_urs.append((deck_max, "Deck slab"))
-    for results, label in ((cb_results, "Cross bracing"), (ed_results, "End diaphragm")):
-        m = _max_member_efficiency(results)
+    for m, label in ((cb_max_ur, "Cross bracing"), (ed_max_ur, "End diaphragm")):
         if m is not None:
             component_urs.append((m, label))
     if component_urs:
@@ -230,10 +311,10 @@ This section provides a concise summary of the bridge design, key inputs, govern
 \addcontentsline{toc}{section}{Key Design Outcomes Summary}
 \label{sec:key-outcomes}
 
-\noindent Girder design pass \\
-Cross bracing design pass \\
-End Diaphragm design pass \\
-Deck design pass
+\noindent Girder design: """ + _tex(girder_status) + r""" \\
+Cross bracing design: """ + _tex(cb_status) + r""" \\
+End diaphragm design: """ + _tex(ed_status) + r""" \\
+Deck design: """ + _tex(deck_status) + r"""
 
 \section*{Design Assumptions and Limitations}
 \addcontentsline{toc}{section}{Design Assumptions and Limitations}

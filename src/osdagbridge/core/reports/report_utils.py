@@ -32,6 +32,28 @@ def _render_value(source_dict, key, unit=""):
     return _tex(val) + unit
 
 
+def _render_value_or_na(source_dict, key, unit=""):
+    """Render an explicit N/A when a report field has no source value."""
+    value = _render_value(source_dict, key, unit)
+    return value if value else "N/A"
+
+
+def _render_dimension_mm(source_dict, key, meter_threshold=1.0, fallback=None):
+    """Format a dimension in mm across legacy metre and millimetre payloads."""
+    raw = source_dict.get(key)
+    if raw in (None, "", "All", "None"):
+        raw = fallback
+    if raw in (None, "", "All", "None"):
+        return "N/A"
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return _tex(raw)
+    if 0 < abs(value) < meter_threshold:
+        value *= 1000.0
+    return f"{value:.1f}"
+
+
 def get_girder_entries(input_dict):
     """
     Retrieve all girder labels and member IDs from backend keys.
@@ -74,7 +96,7 @@ def get_girder_entries(input_dict):
 
 
 def _fig_or_placeholder(path, caption, width=r'0.9\textwidth'):
-    """Embed figure if path is provided (file already copied to assets), else show placeholder box.
+    """Embed a captured figure, or label that it was unavailable for this run.
     path is the relative path as pdflatex will see it (e.g. 'assets/plan.png').
     """
     if path:
@@ -87,13 +109,13 @@ def _fig_or_placeholder(path, caption, width=r'0.9\textwidth'):
     return (r'\begin{figure}[H]' + '\n'
             r'\centering' + '\n'
             r'\fbox{\parbox{0.97\textwidth}{' + '\n'
-            r'\textit{[ PLACEHOLDER: ' + caption + r' ]}' + '\n'
+            r'\textit{Figure unavailable for this run.}' + '\n'
             r'}}' + '\n'
             r'\caption*{' + caption + '}\n'
             r'\end{figure}')
 
 def _fig_embed(path, caption, width=r'\textwidth', height=None):
-    """Embed a real figure when path is provided (already copied); otherwise use an fbox placeholder."""
+    """Embed a real figure when available; otherwise label the missing capture."""
     if path:
         p = path.replace('\\', '/')
         opts = 'width=' + width
@@ -107,9 +129,9 @@ def _fig_embed(path, caption, width=r'\textwidth', height=None):
                 r'\caption*{\small ' + caption + '}\n'
                 r'\vspace{-0.5em}' + '\n'
                 r'\end{figure}')
-    # fbox placeholder — matches template exactly
+    # Keep an explicit note instead of a fake image placeholder.
     return (r'\noindent\fbox{\parbox{0.97\textwidth}{' + '\n'
-            r'\textit{[ PLACEHOLDER: ' + caption + r' ]}' + '\n'
+            r'\textit{Figure unavailable for this run: ' + caption + r'.}' + '\n'
             r'}}')
 
 

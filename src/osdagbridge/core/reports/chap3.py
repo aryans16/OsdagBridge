@@ -56,7 +56,7 @@ from osdagbridge.core.utils.common import (
     KEY_WL_VERTICAL_WIND_FORCE
 )
 
-from osdagbridge.core.reports.report_utils import _tex, _render_value
+from osdagbridge.core.reports.report_utils import _tex, _render_value, _render_value_or_na
 from osdagbridge.core.reports.styles import build_longtable_header, TABLE_STYLE
 
 
@@ -169,6 +169,14 @@ def ch3_loads(input_dict):
 
     footpath_presence = input_dict.get("superstructure.footpath", "None")
     footpath_str = str(footpath_presence) if footpath_presence not in (None, "", "None") else "None / Not Applicable"
+    has_footpath = footpath_str != "None / Not Applicable"
+    if not has_footpath:
+        fp_intensity = "N/A (no footpath specified)"
+        fp_clause = "N/A"
+    footway_note = (
+        r"\noindent\textit{Note: Footway live load is applied to designated pedestrian walkways simultaneously with vehicular live loads as prescribed in IRC 6:2017 Clause 206.1.}"
+        if has_footpath else ""
+    )
 
     # Wind Load
     vz_val = input_dict.get(KEY_WL_HOURLY_MEAN_WIND)
@@ -387,7 +395,7 @@ This section summarizes all dead loads, vehicle live loads, pedestrian loads, en
 
 \vspace{0.8em}
 """ + hdr_t32 + r"""
-\textnormal{Wearing Course Load} & """ + (_render_value(input_dict, KEY_WC_MATERIAL)) + r""" x """ + (_render_value(input_dict, KEY_WC_THICKNESS)) + r""" \\[6pt]
+\textnormal{Wearing Course Material / Thickness} & """ + (_render_value_or_na(input_dict, KEY_WC_MATERIAL)) + r""", """ + (_render_value_or_na(input_dict, KEY_WC_THICKNESS, ' mm')) + r""" \\[6pt]
 \hline
 \textnormal{Additional SIDL (Crash Barrier)} & """ + (_render_value(input_dict, KEY_CB_LOAD)) + r""" kN/m per barrier \\[6pt]
 \hline
@@ -409,7 +417,7 @@ This section summarizes all dead loads, vehicle live loads, pedestrian loads, en
 \hline
 \textnormal{Governing Code Reference} & """ + _tex(fp_clause) + r""" \\[6pt]
 \end{longtable}
-\noindent\textit{Note: Footway live load is applied on designated pedestrian walkways simultaneously with vehicular live loads as prescribed in IRC 6:2017 Clause 206.1.}
+""" + footway_note + r"""
 
 \vspace{0.8em}
 """ + hdr_t35 + r"""
@@ -423,11 +431,11 @@ This section summarizes all dead loads, vehicle live loads, pedestrian loads, en
 \hline
 \textnormal{Hourly Wind Pressure, $P_z$} & """ + (_render_value(input_dict, KEY_WL_HOURLY_WIND_PRESSURE, ' N/m\\textsuperscript{2}')) + r""" \\[6pt]
 \hline
-\textnormal{Transverse Wind Force} & """ + (_render_value(input_dict, KEY_WL_TRANSVERSE_WIND_FORCE, ' kN')) + r""" \\[6pt]
+\textnormal{Transverse Wind Force} & """ + (_render_value_or_na(input_dict, KEY_WL_TRANSVERSE_WIND_FORCE, ' kN')) + r""" \\[6pt]
 \hline
-\textnormal{Longitudinal Wind Force} & """ + (_render_value(input_dict, KEY_WL_LONGITUDINAL_WIND_FORCE, ' kN')) + r""" \\[6pt]
+\textnormal{Longitudinal Wind Force} & """ + (_render_value_or_na(input_dict, KEY_WL_LONGITUDINAL_WIND_FORCE, ' kN')) + r""" \\[6pt]
 \hline
-\textnormal{Vertical Wind Force} & """ + (_render_value(input_dict, KEY_WL_VERTICAL_WIND_FORCE, ' kN')) + r""" \\[6pt]
+\textnormal{Vertical Wind Force} & """ + (_render_value_or_na(input_dict, KEY_WL_VERTICAL_WIND_FORCE, ' kN')) + r""" \\[6pt]
 \end{longtable}
 
 \vspace{0.8em}
@@ -455,7 +463,7 @@ This section summarizes all dead loads, vehicle live loads, pedestrian loads, en
 \hline
 \textnormal{Effective Bridge Temp. Range} & """ + (_render_value(input_dict, KEY_TL_BRIDGE_TEMP_MIN)) + r""" to """ + (_render_value(input_dict, KEY_TL_BRIDGE_TEMP_MAX)) + r""" $^\circ$C \\[6pt]
 \hline
-\textnormal{Temperature Rise / Fall for Design} & +""" + (_render_value(input_dict, KEY_TL_TEMP_RISE)) + r""" $^\circ$C / \textminus{}""" + (_render_value(input_dict, KEY_TL_TEMP_FALL)) + r""" $^\circ$C \\[6pt]
+\textnormal{Temperature Rise / Fall for Design} & +""" + (_render_value_or_na(input_dict, KEY_TL_TEMP_RISE)) + r""" $^\circ$C / -""" + (_render_value_or_na(input_dict, KEY_TL_TEMP_FALL)) + r""" $^\circ$C \\[6pt]
 \end{longtable}
 
 \vspace{0.8em}

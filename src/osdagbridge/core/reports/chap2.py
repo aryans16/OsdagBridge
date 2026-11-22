@@ -56,6 +56,12 @@ from osdagbridge.core.utils.common import (
     KEY_SD_SHEAR_STUDS_PER_SECTION,
     KEY_SD_SHEAR_ULTIMATE_STRENGTH,
     KEY_SD_SHEAR_YIELD_STRENGTH,
+    KEY_SD_TOTAL_DEPTH,
+    KEY_SD_WEB_THICKNESS,
+    KEY_SD_TOP_FLANGE_WIDTH,
+    KEY_SD_TOP_FLANGE_THICKNESS,
+    KEY_SD_BOTTOM_FLANGE_WIDTH,
+    KEY_SD_BOTTOM_FLANGE_THICKNESS,
     KEY_SKEW_ANGLE,
     KEY_SPAN,
     KEY_STRUCTURE_TYPE,
@@ -70,7 +76,10 @@ from osdagbridge.core.utils.common import (
     KEY_WC_THICKNESS
 )
 
-from osdagbridge.core.reports.report_utils import _render_value, get_girder_entries, _tex
+from osdagbridge.core.reports.report_utils import (
+    _render_dimension_mm, _render_value, _render_value_or_na,
+    get_girder_entries, _tex,
+)
 from osdagbridge.core.reports.styles import build_longtable_header, TABLE_STYLE
 
 def ch2_input_parameters(m, input_dict, output_dict=None):
@@ -135,7 +144,7 @@ This section documents all inputs provided to OsdagBridge. User-provided inputs 
 \hline
 \textnormal{Footpath} & """ + (_render_value(input_dict, KEY_FOOTPATH)) + r""" \\
 \hline
-\textnormal{Skew Angle (degrees)} & """ + (_render_value(input_dict, KEY_SKEW_ANGLE, '°')) + r""" (IRC 24 Cl. 504.8 limit: $\pm$15°) \\
+\textnormal{Skew Angle (degrees)} & """ + (_render_value_or_na(input_dict, KEY_SKEW_ANGLE, '°')) + r""" (IRC 24 Cl. 504.8 limit: $\pm$15°) \\
 \hline
 \end{tabular}
 \end{table}
@@ -181,7 +190,7 @@ Where the user has modified additional inputs, those values are reported here. W
 \hline
 \textnormal{Footpath Width (m)} & """ + (_render_value(input_dict, KEY_TS_FOOTPATH_WIDTH, ' m')) + r""" (IRC 5 Cl. 104.3.6 min: 1.5 m) \\[6pt]
 \hline
-\textnormal{No. of Traffic Lanes} & """ + (_render_value(input_dict, KEY_WC_LD_LANE_TABLE_COUNT)) + r""" (per IRC 5 Cl. 104.3.1) \\[6pt]
+\textnormal{No. of Traffic Lanes} & """ + (_render_value_or_na(input_dict, KEY_WC_LD_LANE_TABLE_COUNT)) + r""" (per IRC 5 Cl. 104.3.1) \\[6pt]
 \hline
 \end{longtable}
 
@@ -203,7 +212,7 @@ Where the user has modified additional inputs, those values are reported here. W
 \hline
 \end{longtable}
 
-""" + _girder_tables(input_dict, n_girders) + r"""
+""" + _girder_tables(input_dict, n_girders, output_dict or {}) + r"""
 
 """ + _bracing_tables(input_dict, n_girders) + r"""
 
@@ -212,7 +221,8 @@ Where the user has modified additional inputs, those values are reported here. W
 """ + _safety_factors_table(input_dict)
 
 
-def _girder_tables(input_dict, n_girders):
+def _girder_tables(input_dict, n_girders, output_dict=None):
+    output_dict = output_dict or {}
     # Fetch backend-populated labels via exact suffix pattern (defaults.py)
     # KEY_MP_GD_SELECT_GIRDER.G{i}    = 'G{i}'
     # KEY_MP_GD_MEMBER_ID.G{i}.M1     = 'G{i}M1'
@@ -232,18 +242,24 @@ def _girder_tables(input_dict, n_girders):
 
     # Helper: one girder-dimension row
     def _dim_row(g_lbl, i):
+        def _dim(key, result_key, threshold):
+            value = _render_dimension_mm(
+                input_dict, f"{key}.G{i}.M1", meter_threshold=threshold,
+                fallback=output_dict.get(result_key),
+            )
+            return value if value == "N/A" else value + " mm"
         return (g_lbl + r""" & """
-                + (_render_value(input_dict, f"{KEY_MP_GIRDER_DEPTH}.G{i}.M1", ' mm'))
+                + _dim(KEY_MP_GIRDER_DEPTH, KEY_SD_TOTAL_DEPTH, 100.0)
                 + r""" & """
-                + (_render_value(input_dict, f"{KEY_MP_GIRDER_WEB_THICKNESS}.G{i}.M1", ' mm'))
+                + _dim(KEY_MP_GIRDER_WEB_THICKNESS, KEY_SD_WEB_THICKNESS, 10.0)
                 + r""" & """
-                + (_render_value(input_dict, f"{KEY_MP_GIRDER_TOP_FLANGE_WIDTH}.G{i}.M1", ' mm'))
+                + _dim(KEY_MP_GIRDER_TOP_FLANGE_WIDTH, KEY_SD_TOP_FLANGE_WIDTH, 10.0)
                 + ', '
-                + (_render_value(input_dict, f"{KEY_MP_GIRDER_TOP_FLANGE_THICKNESS}.G{i}.M1", ' mm'))
+                + _dim(KEY_MP_GIRDER_TOP_FLANGE_THICKNESS, KEY_SD_TOP_FLANGE_THICKNESS, 1.0)
                 + r""" & """
-                + (_render_value(input_dict, f"{KEY_MP_GIRDER_BOTTOM_FLANGE_WIDTH}.G{i}.M1", ' mm'))
+                + _dim(KEY_MP_GIRDER_BOTTOM_FLANGE_WIDTH, KEY_SD_BOTTOM_FLANGE_WIDTH, 10.0)
                 + ', '
-                + (_render_value(input_dict, f"{KEY_MP_GIRDER_BOTTOM_FLANGE_THICKNESS}.G{i}.M1", ' mm'))
+                + _dim(KEY_MP_GIRDER_BOTTOM_FLANGE_THICKNESS, KEY_SD_BOTTOM_FLANGE_THICKNESS, 1.0)
                 + r""" \\[8pt]
 \hline
 """)

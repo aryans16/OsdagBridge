@@ -2,6 +2,7 @@ from osdagbridge.core.reports.report_utils import _tex
 
 
 def ch1_project_info(m):
+    comments = _tex(m.additional_comments or "N/A").replace("\n", r"\\")
     return r"""
 \chapter{Project Information}
 
@@ -23,6 +24,8 @@ This section records all project metadata as entered by the designer.
 \textbf{Organization} & """ + _tex(m.company) + r""" \\
 \hline
 \textbf{Client} & """ + _tex(m.client) + r""" \\
+\hline
+\textbf{Additional Comments} & \parbox[t]{8.2cm}{""" + comments + r"""} \\
 \hline
 \textbf{Software Version} & OsdagBridge \\
 \hline
